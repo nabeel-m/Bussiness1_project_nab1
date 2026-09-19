@@ -44,7 +44,7 @@ export default function LoginPage({ onLoginSuccess }) {
   // 3-User Access Slots (2 Admin, 1 Staff)
   const [ssoSlots, setSsoSlots] = useState([
     { id: 'slot-admin-1', slotName: 'Admin 1 (Managing Director)', email: '', role: 'ADMIN', defaultName: 'Managing Director', avatar: '👑' },
-    { id: 'slot-admin-2', slotName: 'Admin 2 (Co-Director / Partner)', email: '', role: 'ADMIN', defaultName: 'Technical Director', avatar: '👑' },
+    { id: 'slot-admin-2', slotName: 'Admin 2 (Co-Director / Partner)', email: 'nabeel.softcode@gmail.com', role: 'ADMIN', defaultName: 'Technical Director', avatar: '👑' },
     { id: 'slot-staff-1', slotName: 'Staff (Billing & Accounts)', email: '', role: 'STAFF', defaultName: 'Billing Operator', avatar: '💼' }
   ]);
 
@@ -414,7 +414,7 @@ export default function LoginPage({ onLoginSuccess }) {
                 </button>
                 <button
                   type="button"
-                  onClick={() => setUsernameInput(ssoSlots[1]?.email || 'partner.admin2@gmail.com')}
+                  onClick={() => setUsernameInput(ssoSlots[1]?.email || 'nabeel.softcode@gmail.com')}
                   className="text-[10px] bg-slate-900 hover:bg-slate-800 text-amber-300 border border-amber-500/30 px-2 py-0.5 rounded-md font-mono transition-colors"
                 >
                   👑 Admin 2
@@ -552,12 +552,12 @@ export default function LoginPage({ onLoginSuccess }) {
               <button
                 type="button"
                 onClick={() => {
-                  const u = ssoSlots[1]?.email || 'partner.admin2@gmail.com';
+                  const u = ssoSlots[1]?.email || 'nabeel.softcode@gmail.com';
                   setUsernameInput(u);
                   setErrorMessage('');
                 }}
                 className={`bg-slate-950/80 hover:bg-slate-800 border p-2 rounded-xl flex items-center justify-between transition-all group text-left ${
-                  usernameInput === (ssoSlots[1]?.email || 'partner.admin2@gmail.com')
+                  usernameInput === (ssoSlots[1]?.email || 'nabeel.softcode@gmail.com')
                     ? 'border-amber-500/80 bg-amber-500/10'
                     : 'border-slate-800 hover:border-amber-500/50'
                 }`}
@@ -570,7 +570,7 @@ export default function LoginPage({ onLoginSuccess }) {
                       <span className="text-[9px] text-amber-400 font-mono bg-amber-500/10 px-1 rounded">Passkey Enabled</span>
                     </div>
                     <div className="text-[10px] text-slate-500 font-mono">
-                      {ssoSlots[1]?.email || 'partner.admin2@gmail.com'}
+                      {ssoSlots[1]?.email || 'nabeel.softcode@gmail.com'}
                     </div>
                   </div>
                 </div>

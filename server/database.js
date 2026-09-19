@@ -112,8 +112,13 @@ export function initDb() {
       VALUES (?, ?, ?, ?, ?, ?)
     `);
     insertSlot.run('slot-admin-1', 'Admin 1 (Managing Director)', '', 'ADMIN', 'Managing Director', '👑');
-    insertSlot.run('slot-admin-2', 'Admin 2 (Co-Director / Partner)', '', 'ADMIN', 'Co-Director / Partner', '👑');
+    insertSlot.run('slot-admin-2', 'Admin 2 (Co-Director / Partner)', 'nabeel.softcode@gmail.com', 'ADMIN', 'Co-Director / Partner', '👑');
     insertSlot.run('slot-staff-1', 'Staff (Billing & Accounts)', '', 'STAFF', 'Billing Operator', '💼');
+  } else {
+    // Ensure Admin 2 email is updated
+    try {
+      db.prepare("UPDATE sso_access_slots SET email = 'nabeel.softcode@gmail.com' WHERE id = 'slot-admin-2' AND (email = '' OR email LIKE '%admin2%' OR email LIKE '%partner%')").run();
+    } catch (e) {}
   }
 
   // Seed default company info
