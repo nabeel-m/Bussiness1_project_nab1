@@ -16,7 +16,7 @@ console.table(transactions);
 
 // 3. Inspect Users
 console.log('\n--- 👑 USERS & PERMISSIONS TABLE ---');
-const users = db.prepare('SELECT id, username, name, role, avatar FROM users').all();
+const users = db.prepare('SELECT id, username, email, role, googleId, authProvider, avatar FROM users').all();
 console.table(users);
 
 // 4. Inspect Quotations

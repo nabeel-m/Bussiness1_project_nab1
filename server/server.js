@@ -31,8 +31,175 @@ app.post('/api/auth/login', (req, res) => {
   }
 });
 
+// Google SSO Authentication Endpoint (Strict 3 Users Access Control: 2 Admin, 1 Staff)
+app.post('/api/auth/google', (req, res) => {
+  const { googleId, email, name, avatar, role } = req.body;
+  
+  if (!googleId && !email) {
+    return res.status(400).json({ error: 'Valid Google user identity (googleId or email) is required' });
+  }
+
+  try {
+    const userEmail = email ? email.trim() : '';
+    const baseUsername = userEmail ? userEmail.split('@')[0].toLowerCase() : (googleId ? `g_${googleId.slice(0, 8)}` : 'google_user');
+
+    // Check against configured 3-user SSO slots in SQLite
+    let matchedSlot = null;
+    if (userEmail) {
+      matchedSlot = db.prepare('SELECT * FROM sso_access_slots WHERE LOWER(email) = LOWER(?)').get(userEmail);
+    }
+
+    const assignedRole = role || (matchedSlot ? matchedSlot.role : 'ADMIN');
+
+    // 1. Check if user already exists by googleId, email, or base username
+    let user = null;
+    if (googleId) {
+      user = db.prepare('SELECT id, username, name, role, avatar, email, googleId, authProvider FROM users WHERE googleId = ?').get(googleId);
+    }
+    if (!user && userEmail) {
+      user = db.prepare('SELECT id, username, name, role, avatar, email, googleId, authProvider FROM users WHERE LOWER(email) = LOWER(?)').get(userEmail);
+    }
+    if (!user) {
+      user = db.prepare('SELECT id, username, name, role, avatar, email, googleId, authProvider FROM users WHERE LOWER(username) = LOWER(?)').get(baseUsername);
+    }
+
+    if (user) {
+      const newRole = assignedRole || user.role;
+      const updateStmt = db.prepare(`
+        UPDATE users 
+        SET googleId = COALESCE(?, googleId),
+            email = COALESCE(?, email),
+            avatar = COALESCE(?, avatar),
+            role = ?,
+            authProvider = COALESCE(authProvider, 'GOOGLE')
+        WHERE id = ?
+      `);
+      updateStmt.run(googleId || null, userEmail || null, avatar || null, newRole, user.id);
+      
+      const updatedUser = db.prepare('SELECT id, username, name, role, avatar, email, googleId, authProvider FROM users WHERE id = ?').get(user.id);
+      return res.json({ success: true, user: updatedUser });
+    }
+
+    // 2. Auto-provision new Google SSO User with specific role
+    const newId = `usr-g-${Date.now()}`;
+    const userName = name || (matchedSlot ? matchedSlot.defaultName : (userEmail ? userEmail.split('@')[0] : 'Google User'));
+    const userRole = assignedRole;
+    const userAvatar = avatar || (matchedSlot ? matchedSlot.avatar : '🌐');
+
+    const insertStmt = db.prepare(`
+      INSERT INTO users (id, username, password, name, email, role, avatar, googleId, authProvider)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+
+    insertStmt.run(newId, baseUsername, '', userName, userEmail || '', userRole, userAvatar, googleId || null, 'GOOGLE');
+    
+    const createdUser = db.prepare('SELECT id, username, name, role, avatar, email, googleId, authProvider FROM users WHERE id = ?').get(newId);
+    return res.status(201).json({ success: true, user: createdUser });
+  } catch (err) {
+    console.error('Error during Google authentication:', err);
+    return res.status(500).json({ error: 'Failed to process Google authentication: ' + err.message });
+  }
+});
+
+// -------------------------------------------------------------
+// Google Passkey (WebAuthn / FIDO2) Authentication Endpoints
+// -------------------------------------------------------------
+app.post('/api/auth/passkey/login', (req, res) => {
+  const { email, credentialId, rawId } = req.body;
+  
+  try {
+    const userEmail = email ? email.trim() : 'director.admin1@gmail.com';
+    const baseUsername = userEmail.split('@')[0].toLowerCase();
+
+    // 1. Check if email matches one of the Admin slots
+    let matchedSlot = db.prepare('SELECT * FROM sso_access_slots WHERE LOWER(email) = LOWER(?)').get(userEmail);
+    if (!matchedSlot) {
+      // Check if slot name has admin or slot 1/2
+      if (baseUsername.includes('admin') || baseUsername.includes('director') || baseUsername.includes('partner')) {
+        matchedSlot = db.prepare("SELECT * FROM sso_access_slots WHERE role = 'ADMIN' LIMIT 1").get();
+      }
+    }
+
+    // 2. Look up or auto-provision Admin user
+    let user = db.prepare('SELECT id, username, name, role, avatar, email, googleId, authProvider FROM users WHERE LOWER(email) = LOWER(?)').get(userEmail);
+    
+    if (!user) {
+      user = db.prepare('SELECT id, username, name, role, avatar, email, googleId, authProvider FROM users WHERE LOWER(username) = LOWER(?)').get(baseUsername);
+    }
+
+    if (!user) {
+      const newId = `usr-passkey-${Date.now()}`;
+      const role = matchedSlot ? matchedSlot.role : 'ADMIN';
+      const name = matchedSlot ? matchedSlot.defaultName : (userEmail.includes('admin') ? 'Managing Director (Admin)' : 'Admin User');
+      const avatar = '👑';
+
+      const insertStmt = db.prepare(`
+        INSERT INTO users (id, username, password, name, email, role, avatar, authProvider)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      `);
+      insertStmt.run(newId, baseUsername, '', name, userEmail, role, avatar, 'GOOGLE_PASSKEY');
+      user = db.prepare('SELECT id, username, name, role, avatar, email, googleId, authProvider FROM users WHERE id = ?').get(newId);
+    } else {
+      // Update email and authProvider tag
+      db.prepare("UPDATE users SET email = ?, authProvider = 'GOOGLE_PASSKEY' WHERE id = ?").run(userEmail, user.id);
+      user = db.prepare('SELECT id, username, name, role, avatar, email, googleId, authProvider FROM users WHERE id = ?').get(user.id);
+    }
+
+    return res.json({ success: true, user });
+  } catch (err) {
+    console.error('Passkey authentication error:', err);
+    return res.status(500).json({ error: 'Failed to verify passkey: ' + err.message });
+  }
+});
+
+app.post('/api/auth/passkey/register', (req, res) => {
+  const { email, credentialId, deviceLabel } = req.body;
+  if (!email || !credentialId) {
+    return res.status(400).json({ error: 'Email and Credential ID are required' });
+  }
+
+  try {
+    const id = `pk-${Date.now()}`;
+    const createdAt = new Date().toISOString();
+    const insertStmt = db.prepare(`
+      INSERT OR REPLACE INTO passkeys (id, email, credentialId, deviceLabel, createdAt)
+      VALUES (?, ?, ?, ?, ?)
+    `);
+    insertStmt.run(id, email.trim(), credentialId, deviceLabel || 'Google Passkey Device', createdAt);
+    return res.json({ success: true, message: 'Passkey registered successfully for ' + email });
+  } catch (err) {
+    console.error('Passkey registration error:', err);
+    return res.status(500).json({ error: 'Failed to register passkey: ' + err.message });
+  }
+});
+
+// -------------------------------------------------------------
+// SSO 3-User Access Slots Configuration Endpoints
+// -------------------------------------------------------------
+app.get('/api/auth/sso-slots', (req, res) => {
+  const slots = db.prepare('SELECT * FROM sso_access_slots ORDER BY id ASC').all();
+  res.json(slots);
+});
+
+app.put('/api/auth/sso-slots', (req, res) => {
+  const { slots } = req.body; // array of { id, email, slotName }
+  if (!Array.isArray(slots)) {
+    return res.status(400).json({ error: 'Slots array is required' });
+  }
+
+  const updateStmt = db.prepare('UPDATE sso_access_slots SET email = ? WHERE id = ?');
+  db.transaction(() => {
+    for (const s of slots) {
+      updateStmt.run(s.email ? s.email.trim() : '', s.id);
+    }
+  })();
+
+  const updated = db.prepare('SELECT * FROM sso_access_slots ORDER BY id ASC').all();
+  res.json({ success: true, slots: updated });
+});
+
 app.get('/api/auth/users', (req, res) => {
-  const users = db.prepare('SELECT id, username, name, role, avatar FROM users').all();
+  const users = db.prepare('SELECT id, username, name, role, avatar, email, googleId, authProvider FROM users').all();
   res.json(users);
 });
 

@@ -22,6 +22,83 @@ export const apiClient = {
     }
   },
 
+  // Google SSO Authentication
+  googleLogin: async (googleUserData) => {
+    try {
+      const res = await fetch(`${BASE_URL}/auth/google`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(googleUserData)
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || 'Google authentication failed');
+      }
+      return await res.json();
+    } catch (err) {
+      console.warn('Backend API unreachable for Google SSO, utilizing client-side session:', err.message);
+      return null; // Fallback to client-side session
+    }
+  },
+
+  // Google Passkey (WebAuthn / Biometrics) Authentication
+  passkeyLogin: async (passkeyData) => {
+    try {
+      const res = await fetch(`${BASE_URL}/auth/passkey/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(passkeyData)
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || 'Passkey authentication failed');
+      }
+      return await res.json();
+    } catch (err) {
+      console.warn('Backend API unreachable for Passkey, utilizing client-side fallback:', err.message);
+      return null;
+    }
+  },
+
+  registerPasskey: async (enrollmentData) => {
+    try {
+      const res = await fetch(`${BASE_URL}/auth/passkey/register`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(enrollmentData)
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || 'Passkey enrollment failed');
+      }
+      return await res.json();
+    } catch (err) {
+      console.warn('Backend API unreachable for Passkey registration:', err.message);
+      return null;
+    }
+  },
+
+  // 3-User SSO Slots API
+  getSsoSlots: async () => {
+    try {
+      const res = await fetch(`${BASE_URL}/auth/sso-slots`);
+      if (res.ok) return await res.json();
+    } catch (e) {}
+    return null;
+  },
+
+  updateSsoSlots: async (slots) => {
+    try {
+      const res = await fetch(`${BASE_URL}/auth/sso-slots`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ slots })
+      });
+      if (res.ok) return await res.json();
+    } catch (e) {}
+    return null;
+  },
+
   // Clients API
   getClients: async () => {
     try {

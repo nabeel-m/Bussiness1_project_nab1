@@ -17,10 +17,13 @@ export function initDb() {
     CREATE TABLE IF NOT EXISTS users (
       id TEXT PRIMARY KEY,
       username TEXT UNIQUE NOT NULL,
-      password TEXT NOT NULL,
+      password TEXT,
       name TEXT NOT NULL,
+      email TEXT,
       role TEXT NOT NULL,
-      avatar TEXT
+      avatar TEXT,
+      googleId TEXT,
+      authProvider TEXT DEFAULT 'LOCAL'
     );
 
     CREATE TABLE IF NOT EXISTS clients (
@@ -63,7 +66,55 @@ export function initDb() {
       sloganSub TEXT,
       tradeMarkText TEXT
     );
+
+    CREATE TABLE IF NOT EXISTS sso_access_slots (
+      id TEXT PRIMARY KEY,
+      slotName TEXT NOT NULL,
+      email TEXT,
+      role TEXT NOT NULL,
+      defaultName TEXT NOT NULL,
+      avatar TEXT
+    );
+
+    CREATE TABLE IF NOT EXISTS passkeys (
+      id TEXT PRIMARY KEY,
+      email TEXT NOT NULL,
+      userId TEXT,
+      credentialId TEXT UNIQUE NOT NULL,
+      publicKey TEXT,
+      counter INTEGER DEFAULT 0,
+      deviceLabel TEXT,
+      createdAt TEXT NOT NULL
+    );
   `);
+
+  // Migrate users table columns if missing
+  try {
+    const userColumns = db.pragma('table_info(users)').map(c => c.name);
+    if (!userColumns.includes('email')) {
+      db.exec('ALTER TABLE users ADD COLUMN email TEXT');
+    }
+    if (!userColumns.includes('googleId')) {
+      db.exec('ALTER TABLE users ADD COLUMN googleId TEXT');
+    }
+    if (!userColumns.includes('authProvider')) {
+      db.exec("ALTER TABLE users ADD COLUMN authProvider TEXT DEFAULT 'LOCAL'");
+    }
+  } catch (err) {
+    console.warn('Migration note on users table:', err.message);
+  }
+
+  // Seed default 3 SSO Access Slots (2 Admins, 1 Staff)
+  const checkSlots = db.prepare('SELECT COUNT(*) as count FROM sso_access_slots').get();
+  if (checkSlots.count === 0) {
+    const insertSlot = db.prepare(`
+      INSERT INTO sso_access_slots (id, slotName, email, role, defaultName, avatar)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `);
+    insertSlot.run('slot-admin-1', 'Admin 1 (Managing Director)', '', 'ADMIN', 'Managing Director', '👑');
+    insertSlot.run('slot-admin-2', 'Admin 2 (Co-Director / Partner)', '', 'ADMIN', 'Co-Director / Partner', '👑');
+    insertSlot.run('slot-staff-1', 'Staff (Billing & Accounts)', '', 'STAFF', 'Billing Operator', '💼');
+  }
 
   // Seed default company info
   const checkCompany = db.prepare('SELECT COUNT(*) as count FROM company_info').get();
@@ -78,9 +129,9 @@ export function initDb() {
   const checkUsers = db.prepare('SELECT COUNT(*) as count FROM users').get();
   if (checkUsers.count === 0) {
     const insertUser = db.prepare('INSERT INTO users (id, username, password, name, role, avatar) VALUES (?, ?, ?, ?, ?, ?)');
-    insertUser.run('usr-admin', 'admin', 'admin123', 'System Admin / Owner', 'ADMIN', '👑');
-    insertUser.run('usr-staff', 'staff', 'staff123', 'Billing Staff Operator', 'STAFF', '💼');
-    insertUser.run('usr-client', 'client', 'client123', 'Client Read-Only Viewer', 'VIEWER', '👁️');
+    insertUser.run('usr-admin-1', 'admin1', '', 'Managing Director (Admin 1)', 'ADMIN', '👑');
+    insertUser.run('usr-admin-2', 'admin2', '', 'Co-Director (Admin 2)', 'ADMIN', '👑');
+    insertUser.run('usr-staff-1', 'staff', '', 'Billing Operator (Staff)', 'STAFF', '💼');
   }
 
   // Seed default client & transactions if empty
@@ -108,5 +159,8 @@ export function initDb() {
 
   console.log('Database initialized successfully at:', dbPath);
 }
+
+// Auto-run initialization & migrations
+initDb();
 
 export default db;

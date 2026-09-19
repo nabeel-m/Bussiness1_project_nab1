@@ -21,7 +21,7 @@ export default function App() {
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
-        if (parsed && parsed.username && parsed.role) return parsed;
+        if (parsed && (parsed.username || parsed.email) && parsed.role) return parsed;
       } catch (e) {}
     }
     return null; // Prompt login if no active session

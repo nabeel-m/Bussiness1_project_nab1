@@ -120,14 +120,34 @@ export default function Header({
             {/* Active User Badge & Logout Button */}
             {authUser && (
               <div className="flex items-center space-x-2 pl-2 border-l border-slate-800">
-                <div className="flex items-center space-x-1.5 bg-slate-950 px-2.5 py-1 rounded-xl border border-slate-800">
-                  <span className="text-sm">{authUser.avatar || '👤'}</span>
+                <div className="flex items-center space-x-2 bg-slate-950 px-2.5 py-1 rounded-xl border border-slate-800">
+                  {authUser.avatar && (authUser.avatar.startsWith('http') || authUser.avatar.startsWith('/')) ? (
+                    <img
+                      src={authUser.avatar}
+                      alt={authUser.name}
+                      className="w-6 h-6 rounded-full object-cover border border-amber-500/40 shrink-0"
+                      onError={(e) => {
+                        e.target.onerror = null;
+                        e.target.style.display = 'none';
+                      }}
+                    />
+                  ) : (
+                    <span className="text-sm shrink-0">{authUser.avatar || '👤'}</span>
+                  )}
+                  
                   <div className="hidden lg:block text-left">
-                    <div className="text-xs font-bold text-slate-200 leading-none">
+                    <div className="text-xs font-bold text-slate-200 leading-none truncate max-w-[130px]">
                       {authUser.name}
                     </div>
-                    <div className="text-[9px] font-extrabold uppercase text-amber-400 tracking-wider mt-0.5">
-                      {authUser.role}
+                    <div className="flex items-center space-x-1 mt-0.5">
+                      <span className="text-[9px] font-extrabold uppercase text-amber-400 tracking-wider">
+                        {authUser.role}
+                      </span>
+                      {authUser.authProvider === 'GOOGLE' && (
+                        <span className="text-[8px] bg-blue-500/20 text-blue-400 px-1 rounded font-semibold font-mono">
+                          Google
+                        </span>
+                      )}
                     </div>
                   </div>
                 </div>
