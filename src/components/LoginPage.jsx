@@ -50,8 +50,8 @@ export default function LoginPage({ onLoginSuccess }) {
 
   const googleBtnContainerRef = useRef(null);
 
-  // Username & Passkey Authentication State
-  const [usernameInput, setUsernameInput] = useState('');
+  // Username & Passkey Authentication State (Preset to Admin 2: nabeel.softcode@gmail.com)
+  const [usernameInput, setUsernameInput] = useState('nabeel.softcode@gmail.com');
 
   // Load configured 3-user SSO slots from backend on mount
   useEffect(() => {
