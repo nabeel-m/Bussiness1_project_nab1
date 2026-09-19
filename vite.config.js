@@ -4,7 +4,7 @@ import tailwindcss from '@tailwindcss/vite';
 
 // https://vitejs.dev/config/
 export default defineConfig({
-  base: './',
+  base: process.env.NODE_ENV === 'production' ? '/Bussiness1_project_nab1/' : '/',
   plugins: [react(), tailwindcss()],
   server: {
     port: 3000,
