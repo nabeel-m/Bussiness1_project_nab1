@@ -1,0 +1,170 @@
+@import "tailwindcss";
+
+@layer utilities {
+  .font-heading {
+    font-family: 'Cinzel', serif, 'Times New Roman';
+  }
+  .font-quotation {
+    font-family: 'Times New Roman', Times, serif;
+  }
+  .font-sans {
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  }
+}
+
+/* ============================================================
+   PRINT RULES - Preserve exact on-screen visual appearance
+   ============================================================ */
+@media print {
+  /* Preserve all colors exactly — critical for orange template */
+  * {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+    color-adjust: exact !important;
+    box-sizing: border-box;
+  }
+
+  /* Hide browser UI, dark nav bar, action buttons */
+  .no-print,
+  header,
+  nav,
+  button,
+  input,
+  select {
+    display: none !important;
+    visibility: hidden !important;
+    height: 0 !important;
+    width: 0 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    border: none !important;
+  }
+
+  /* Reset body/page wrapper — clean white background */
+  html,
+  body,
+  #root {
+    background: #ffffff !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    overflow: visible !important;
+  }
+
+  /* Outer wrapper: remove dark background */
+  .max-w-5xl,
+  .max-w-4xl {
+    background: #ffffff !important;
+    padding: 0 !important;
+    margin: 0 auto !important;
+    max-width: 100% !important;
+    width: 100% !important;
+  }
+
+  /* The A4 quotation sheet — keep luxury borders, spacing, and watermark */
+  .quotation-sheet-container {
+    display: block !important;
+    visibility: visible !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    margin: 0 auto !important;
+    padding: 32px !important;
+    box-shadow: none !important;
+    border: 2.5px solid #b45309 !important;
+    outline: 1.5px solid #f59e0b !important;
+    outline-offset: -6px !important;
+    background: #ffffff !important;
+    position: relative !important;
+    page-break-after: avoid !important;
+    page-break-inside: avoid !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  .quotation-watermark {
+    display: flex !important;
+    visibility: visible !important;
+    opacity: 0.15 !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  /* Orange header title */
+  .quotation-sheet-container h1 {
+    color: #ea580c !important;
+  }
+
+  /* Peach cards — preserve background */
+  .card-peach,
+  [style*="background-color: rgb(255, 247, 237)"],
+  [style*="background-color: #fff7ed"] {
+    background-color: #fff7ed !important;
+    border-color: #fed7aa !important;
+  }
+
+  /* Orange section headings */
+  .quotation-sheet-container h3,
+  .quotation-sheet-container h4 {
+    color: #d97706 !important;
+  }
+
+  /* Table: preserve orange header */
+  .quotation-sheet-container table {
+    width: 100% !important;
+    border-collapse: collapse !important;
+    font-size: 11px !important;
+  }
+
+  .quotation-sheet-container thead tr,
+  .quotation-sheet-container th {
+    background-color: #ea580c !important;
+    color: #ffffff !important;
+    font-weight: 700 !important;
+    padding: 8px 10px !important;
+  }
+
+  /* Striped rows */
+  .quotation-sheet-container tbody tr:nth-child(even) {
+    background-color: #fff7ed !important;
+  }
+  .quotation-sheet-container tbody tr:nth-child(odd) {
+    background-color: #ffffff !important;
+  }
+
+  .quotation-sheet-container td {
+    padding: 8px 10px !important;
+    color: #1e293b !important;
+    border-bottom: 1px solid #fed7aa !important;
+  }
+
+  /* Keep flex layouts working */
+  .flex { display: flex !important; }
+  .grid-2 { display: flex !important; }
+
+  /* SVG logo visible */
+  .quotation-sheet-container svg {
+    display: block !important;
+    visibility: visible !important;
+  }
+
+  /* Page setup - Equal 10mm margins on all 4 sides (vertical and horizontal) */
+  @page {
+    size: A4 portrait;
+    margin: 10mm;
+  }
+}
+
+/* Custom scrollbar for dark UI */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: #0f172a;
+}
+::-webkit-scrollbar-thumb {
+  background: #334155;
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #475569;
+}

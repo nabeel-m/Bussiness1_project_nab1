@@ -1,0 +1,47 @@
+{
+  "company": "SMART TECH",
+  "clientName": "Kallekad Block Site Project",
+  "siteLocation": "Kallekad Block Site",
+  "refNo": "004",
+  "quotationDate": "2026-08-21",
+  "openingBalance": 1258382,
+  "statementRows": [
+    {
+      "id": "tx-1",
+      "clientId": "client-1",
+      "date": "2026-07-10",
+      "description": "Second Bill Amount",
+      "type": "BILL",
+      "amount": 129950,
+      "currentRunningBalance": 1388332
+    },
+    {
+      "id": "tx-2",
+      "clientId": "client-1",
+      "date": "2026-07-12",
+      "description": "Borrowed money advance credit",
+      "type": "PAYMENT",
+      "amount": 100000,
+      "currentRunningBalance": 1288332
+    },
+    {
+      "id": "tx-3",
+      "clientId": "client-1",
+      "date": "2026-07-14",
+      "description": "3rd & 4th bill balance amount",
+      "type": "BILL",
+      "amount": 966823,
+      "currentRunningBalance": 2255155
+    },
+    {
+      "id": "tx-4",
+      "clientId": "client-1",
+      "date": "2026-07-14",
+      "description": "Advance Paid Deduction",
+      "type": "PAYMENT",
+      "amount": 61609,
+      "currentRunningBalance": 2193546
+    }
+  ],
+  "netBalance": 2193546
+}
