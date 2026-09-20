@@ -3,16 +3,19 @@ import {
   ShieldCheck, 
   Settings, 
   CheckCircle2, 
-  Sparkles,
-  HelpCircle,
-  X,
-  Lock,
-  ArrowRight,
-  Users,
-  Mail,
-  UserCheck,
-  Fingerprint,
-  KeyRound
+  Sparkles, 
+  X, 
+  Lock, 
+  ArrowRight, 
+  UserCheck, 
+  Crown, 
+  Code2, 
+  Briefcase, 
+  Mail, 
+  RefreshCw,
+  KeyRound,
+  Eye,
+  EyeOff
 } from 'lucide-react';
 import Logo from './Logo';
 import { apiClient } from '../utils/apiClient';
@@ -22,36 +25,34 @@ import {
   decodeGoogleJwt, 
   formatGoogleUser 
 } from '../utils/googleAuth';
-import { 
-  authenticatePasskey, 
-  registerPasskey, 
-  isPasskeySupported 
-} from '../utils/passkeyAuth';
+
+const DEFAULT_MEMBERS = [
+  { id: 'slot-admin-1', username: 'admin1', name: 'Managing Director (MD)', role: 'ADMIN', avatar: '👑', email: 'smartechpalakkad@gmail.com', description: 'Admin 1 • Executive Director' },
+  { id: 'slot-admin-2', username: 'admin2', name: 'Developer (Admin 2)', role: 'ADMIN', avatar: '💻', email: 'nabeel.softcode@gmail.com', description: 'Admin 2 • Developer & System Ops' },
+  { id: 'slot-staff-1', username: 'staff', name: 'Staff (Billing & Accounts)', role: 'STAFF', avatar: '💼', email: '', description: 'Staff • Billing, Quotation & Ledger' }
+];
 
 export default function LoginPage({ onLoginSuccess }) {
+  const [authMode, setAuthMode] = useState('google'); // 'google' | 'password'
   const [errorMessage, setErrorMessage] = useState('');
   const [successMessage, setSuccessMessage] = useState('');
   const [isGoogleLoading, setIsGoogleLoading] = useState(false);
-  const [isPasskeyLoading, setIsPasskeyLoading] = useState(false);
-  const [isEnrollingPasskey, setIsEnrollingPasskey] = useState(false);
-  
-  // Google SSO Settings Modal & State
+  const [activeSlotLoading, setActiveSlotLoading] = useState(null);
+
+  // 3 SSO Slots Configuration State
+  const [ssoSlots, setSsoSlots] = useState(DEFAULT_MEMBERS);
   const [clientId, setClientId] = useState(() => getGoogleClientId());
   const [showConfigModal, setShowConfigModal] = useState(false);
   const [inputClientId, setInputClientId] = useState(() => getGoogleClientId());
   const [saveSuccessMsg, setSaveSuccessMsg] = useState(false);
 
-  // 3-User Access Slots (2 Admin, 1 Staff)
-  const [ssoSlots, setSsoSlots] = useState([
-    { id: 'slot-admin-1', slotName: 'Admin 1 (Managing Director)', email: '', role: 'ADMIN', defaultName: 'Managing Director', avatar: '👑' },
-    { id: 'slot-admin-2', slotName: 'Admin 2 (Co-Director / Partner)', email: 'nabeel.softcode@gmail.com', role: 'ADMIN', defaultName: 'Technical Director', avatar: '👑' },
-    { id: 'slot-staff-1', slotName: 'Staff (Billing & Accounts)', email: '', role: 'STAFF', defaultName: 'Billing Operator', avatar: '💼' }
-  ]);
+  // Password Login State for Selected Member
+  const [selectedMemberUsername, setSelectedMemberUsername] = useState('admin1');
+  const [passwordInput, setPasswordInput] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [isPasswordLoading, setIsPasswordLoading] = useState(false);
 
   const googleBtnContainerRef = useRef(null);
-
-  // Username & Passkey Authentication State (Preset to Admin 2: nabeel.softcode@gmail.com)
-  const [usernameInput, setUsernameInput] = useState('nabeel.softcode@gmail.com');
 
   // Load configured 3-user SSO slots from backend on mount
   useEffect(() => {
@@ -118,23 +119,43 @@ export default function LoginPage({ onLoginSuccess }) {
       // Check role mapping from 3 SSO slots
       const userEmail = decoded.email.toLowerCase();
       const matchedSlot = ssoSlots.find(s => s.email && s.email.trim().toLowerCase() === userEmail);
-      const determinedRole = matchedSlot ? matchedSlot.role : 'ADMIN';
+      
+      let determinedRole = 'ADMIN';
+      let determinedName = 'Managing Director (MD)';
+      let determinedAvatar = '👑';
+
+      if (matchedSlot) {
+        determinedRole = matchedSlot.role;
+        determinedName = matchedSlot.defaultName || matchedSlot.name || decoded.name;
+        determinedAvatar = matchedSlot.avatar;
+      } else if (userEmail.includes('dev') || userEmail.includes('nabeel')) {
+        determinedRole = 'ADMIN';
+        determinedName = 'Developer (Admin 2)';
+        determinedAvatar = '💻';
+      } else if (userEmail.includes('staff') || userEmail.includes('billing')) {
+        determinedRole = 'STAFF';
+        determinedName = 'Staff (Billing & Accounts)';
+        determinedAvatar = '💼';
+      }
 
       const googleUserData = {
         googleId: decoded.sub,
         email: decoded.email,
-        name: decoded.name || `${decoded.given_name || ''} ${decoded.family_name || ''}`.trim(),
-        avatar: decoded.picture || (matchedSlot ? matchedSlot.avatar : '🌐'),
+        name: determinedName || decoded.name,
+        avatar: decoded.picture || determinedAvatar,
         role: determinedRole
       };
 
-      // Sync with SQLite Backend API
+      // Sync with Backend API
       const backendRes = await apiClient.googleLogin(googleUserData);
       const authenticatedUser = (backendRes && backendRes.user) 
         ? backendRes.user 
         : formatGoogleUser(decoded, determinedRole);
 
-      onLoginSuccess(authenticatedUser);
+      setSuccessMessage(`Welcome, ${authenticatedUser.name}! Logging in with Google...`);
+      setTimeout(() => {
+        onLoginSuccess(authenticatedUser);
+      }, 350);
     } catch (err) {
       console.error('Google Sign-In Error:', err);
       setErrorMessage('Google Sign-In failed: ' + err.message);
@@ -143,160 +164,143 @@ export default function LoginPage({ onLoginSuccess }) {
     }
   };
 
-  // Google Passkey (WebAuthn / Biometrics / Windows Hello / Titan Key) Authentication
-  const handlePasskeyLogin = async (e, customUsername = null) => {
-    if (e && e.preventDefault) e.preventDefault();
-    
-    const targetUsername = (customUsername || usernameInput).trim();
-    if (!targetUsername) {
-      setErrorMessage('Please enter your Username or Gmail address to verify your passkey.');
+  // Trigger real Google OAuth Sign-In Popup for the selected member
+  const handleMemberGoogleSignIn = (slot) => {
+    setActiveSlotLoading(slot.id);
+    setErrorMessage('');
+    setSuccessMessage('');
+
+    const activeClientId = getGoogleClientId();
+    if (!activeClientId) {
+      setActiveSlotLoading(null);
+      setErrorMessage(`Google Client ID is not configured. Please click "Configure Google Emails / Client ID" below or enter the member password to sign in.`);
+      setShowConfigModal(true);
       return;
     }
 
-    setIsPasskeyLoading(true);
+    // 1. Try Google OAuth2 Token Client popup (Opens Google's real Sign-In popup)
+    if (window.google?.accounts?.oauth2) {
+      try {
+        setIsGoogleLoading(true);
+        const tokenClient = window.google.accounts.oauth2.initTokenClient({
+          client_id: activeClientId,
+          scope: 'email profile openid',
+          hint: slot?.email || '',
+          callback: async (tokenResponse) => {
+            setIsGoogleLoading(false);
+            setActiveSlotLoading(null);
+
+            if (tokenResponse.error) {
+              if (tokenResponse.error === 'popup_closed_by_user') {
+                setErrorMessage('Google Sign-In popup was closed. Please try again.');
+              } else {
+                setErrorMessage('Google authentication error: ' + tokenResponse.error);
+              }
+              return;
+            }
+
+            if (tokenResponse.access_token) {
+              try {
+                // Fetch verified profile from Google UserInfo endpoint
+                const res = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
+                  headers: { Authorization: `Bearer ${tokenResponse.access_token}` }
+                });
+                const userProfile = await res.json();
+                
+                if (userProfile && userProfile.email) {
+                  // Role Mapping based on 3 member slots
+                  const userEmail = userProfile.email.toLowerCase();
+                  const matchedSlot = ssoSlots.find(s => s.email && s.email.trim().toLowerCase() === userEmail);
+                  
+                  let determinedRole = slot.role || 'ADMIN';
+                  let determinedName = slot.name || slot.defaultName || userProfile.name;
+                  let determinedAvatar = slot.avatar || '👑';
+
+                  if (matchedSlot) {
+                    determinedRole = matchedSlot.role;
+                    determinedName = matchedSlot.defaultName || matchedSlot.name || userProfile.name;
+                    determinedAvatar = matchedSlot.avatar;
+                  }
+
+                  const googleUserData = {
+                    googleId: userProfile.sub,
+                    email: userProfile.email,
+                    name: determinedName,
+                    avatar: userProfile.picture || determinedAvatar,
+                    role: determinedRole
+                  };
+
+                  const backendRes = await apiClient.googleLogin(googleUserData);
+                  const authenticatedUser = (backendRes && backendRes.user) || formatGoogleUser(userProfile, determinedRole);
+
+                  setSuccessMessage(`Welcome, ${authenticatedUser.name}! Logging in...`);
+                  setTimeout(() => {
+                    onLoginSuccess(authenticatedUser);
+                  }, 350);
+                }
+              } catch (profileErr) {
+                setErrorMessage('Failed to load Google profile: ' + profileErr.message);
+              }
+            }
+          }
+        });
+
+        tokenClient.requestAccessToken({ prompt: slot?.email ? '' : 'select_account' });
+        return;
+      } catch (oauthErr) {
+        console.warn('OAuth2 client init error, falling back to GIS prompt:', oauthErr.message);
+      }
+    }
+
+    // 2. Fallback to Google Identity Services One-Tap prompt
+    if (window.google?.accounts?.id) {
+      try {
+        setIsGoogleLoading(true);
+        window.google.accounts.id.prompt((notification) => {
+          setIsGoogleLoading(false);
+          setActiveSlotLoading(null);
+          if (notification.isNotDisplayed()) {
+            setErrorMessage('Google Sign-In prompt was not displayed. Please click the "Continue with Google" button below.');
+          } else if (notification.isSkippedMoment()) {
+            setErrorMessage('Google prompt was dismissed. Please click "Continue with Google" button or use Member Password.');
+          }
+        });
+      } catch (err) {
+        setIsGoogleLoading(false);
+        setActiveSlotLoading(null);
+        setErrorMessage('Failed to open Google Sign-In: ' + err.message);
+      }
+    } else {
+      setActiveSlotLoading(null);
+      setErrorMessage('Google Identity Services is loading. Please click the Continue with Google button or use Member Password.');
+    }
+  };
+
+  // Password Sign-In
+  const handlePasswordLogin = async (e) => {
+    e.preventDefault();
+    if (!passwordInput.trim()) {
+      setErrorMessage('Please enter your password.');
+      return;
+    }
+
+    setIsPasswordLoading(true);
     setErrorMessage('');
     setSuccessMessage('');
 
     try {
-      // Trigger Native WebAuthn Assertion (Windows Hello / Passkey / Biometrics)
-      const passkeyAssertion = await authenticatePasskey(targetUsername);
-      
-      // Verify with SQLite Backend API
-      const backendRes = await apiClient.passkeyLogin({
-        email: targetUsername,
-        credentialId: passkeyAssertion.id,
-        rawId: passkeyAssertion.rawId
-      });
-
-      const matchedSlot = ssoSlots.find(s => s.email && s.email.toLowerCase() === targetUsername.toLowerCase());
-      const role = matchedSlot ? matchedSlot.role : (targetUsername.toLowerCase().includes('staff') ? 'STAFF' : 'ADMIN');
-      const name = matchedSlot ? matchedSlot.defaultName : (role === 'ADMIN' ? 'Managing Director (Admin)' : 'Staff User');
-
-      const user = (backendRes && backendRes.user) || {
-        id: `usr-passkey-${Date.now()}`,
-        name: name,
-        username: targetUsername.split('@')[0],
-        email: targetUsername.includes('@') ? targetUsername : `${targetUsername}@smarttech.com`,
-        role: role,
-        avatar: role === 'ADMIN' ? '👑' : '💼',
-        authProvider: 'GOOGLE_PASSKEY'
-      };
-
-      setSuccessMessage('Passkey verified successfully! Logging in...');
-      setTimeout(() => {
-        onLoginSuccess(user);
-      }, 400);
+      const res = await apiClient.login(selectedMemberUsername, passwordInput.trim());
+      if (res && res.success && res.user) {
+        setSuccessMessage(`Welcome back, ${res.user.name}!`);
+        setTimeout(() => {
+          onLoginSuccess(res.user);
+        }, 300);
+      }
     } catch (err) {
-      console.warn('Native Passkey authentication message:', err.message);
-      if (err.name === 'NotAllowedError' || err.message?.includes('cancelled')) {
-        setErrorMessage('Passkey verification was cancelled. Please authenticate with your passkey to sign in.');
-      } else {
-        // Fallback verification for demo/environment test
-        const backendRes = await apiClient.passkeyLogin({ email: targetUsername, credentialId: 'demo-passkey-id' });
-        const user = (backendRes && backendRes.user) || {
-          id: `usr-passkey-${Date.now()}`,
-          name: targetUsername.includes('staff') ? 'Staff Operator' : 'Managing Director (Admin)',
-          username: targetUsername.split('@')[0],
-          email: targetUsername.includes('@') ? targetUsername : `${targetUsername}@smarttech.com`,
-          role: targetUsername.toLowerCase().includes('staff') ? 'STAFF' : 'ADMIN',
-          avatar: targetUsername.toLowerCase().includes('staff') ? '💼' : '👑',
-          authProvider: 'GOOGLE_PASSKEY'
-        };
-        onLoginSuccess(user);
-      }
+      setErrorMessage(err.message || 'Incorrect password.');
     } finally {
-      setIsPasskeyLoading(false);
+      setIsPasswordLoading(false);
     }
-  };
-
-  // Register / Enroll Device Passkey for User
-  const handleEnrollPasskey = async () => {
-    const targetUsername = usernameInput.trim();
-    if (!targetUsername) {
-      setErrorMessage('Please enter your Username or Gmail first before enrolling a passkey.');
-      return;
-    }
-
-    setIsEnrollingPasskey(true);
-    setErrorMessage('');
-    try {
-      const enrollment = await registerPasskey(targetUsername, targetUsername);
-      await apiClient.registerPasskey({
-        email: targetUsername,
-        credentialId: enrollment.id,
-        deviceLabel: enrollment.deviceLabel
-      });
-      setSuccessMessage(`Google Passkey successfully enrolled on this device for ${targetUsername}!`);
-    } catch (err) {
-      setErrorMessage('Passkey enrollment: ' + err.message);
-    } finally {
-      setIsEnrollingPasskey(false);
-    }
-  };
-
-  // Trigger Google Sign In or Prompt
-  const handleCustomGoogleClick = () => {
-    const activeClientId = getGoogleClientId();
-    if (!activeClientId) {
-      setShowConfigModal(true);
-      return;
-    }
-
-    if (window.google?.accounts?.id) {
-      try {
-        window.google.accounts.id.prompt();
-      } catch (e) {
-        setShowConfigModal(true);
-      }
-    } else {
-      setShowConfigModal(true);
-    }
-  };
-
-  // 1-Click Simulated Google SSO for the 3 specific users
-  const handleSimulatedGoogleLogin = async (slotId) => {
-    setIsGoogleLoading(true);
-    setErrorMessage('');
-
-    setTimeout(async () => {
-      let mockGooglePayload;
-      if (slotId === 'slot-admin-1') {
-        mockGooglePayload = {
-          sub: '109823487192837461928',
-          email: ssoSlots[0]?.email || 'director.admin1@smarttechsolutions.com',
-          name: 'Managing Director (Admin 1)',
-          picture: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80',
-          role: 'ADMIN'
-        };
-      } else if (slotId === 'slot-admin-2') {
-        mockGooglePayload = {
-          sub: '109823487192837461999',
-          email: ssoSlots[1]?.email || 'partner.admin2@smarttechsolutions.com',
-          name: 'Co-Director / Partner (Admin 2)',
-          picture: 'https://images.unsplash.com/photo-1570295999919-56ceb5ecca61?w=150&auto=format&fit=crop&q=80',
-          role: 'ADMIN'
-        };
-      } else {
-        mockGooglePayload = {
-          sub: '118273645291827364512',
-          email: ssoSlots[2]?.email || 'billing.staff@smarttechsolutions.com',
-          name: 'Billing Operator (Staff)',
-          picture: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&auto=format&fit=crop&q=80',
-          role: 'STAFF'
-        };
-      }
-
-      const backendRes = await apiClient.googleLogin(mockGooglePayload);
-      const user = (backendRes && backendRes.user) || formatGoogleUser(mockGooglePayload, mockGooglePayload.role);
-      
-      setIsGoogleLoading(false);
-      onLoginSuccess(user);
-    }, 400);
-  };
-
-  // Update Slot Email
-  const handleSlotEmailChange = (id, newEmail) => {
-    setSsoSlots(prev => prev.map(slot => slot.id === id ? { ...slot, email: newEmail } : slot));
   };
 
   // Save Configuration (Client ID + 3 User Access Slots)
@@ -305,15 +309,21 @@ export default function LoginPage({ onLoginSuccess }) {
     setGoogleClientId(inputClientId);
     setClientId(inputClientId.trim());
     
-    // Save 3 slots to backend SQLite
+    // Save 3 slots to SQLite backend
     await apiClient.updateSsoSlots(ssoSlots);
 
     setSaveSuccessMsg(true);
     setTimeout(() => {
       setSaveSuccessMsg(false);
       setShowConfigModal(false);
-    }, 900);
+    }, 800);
   };
+
+  const handleSlotEmailChange = (id, newEmail) => {
+    setSsoSlots(prev => prev.map(s => s.id === id ? { ...s, email: newEmail } : s));
+  };
+
+  const selectedMember = ssoSlots.find(m => m.username === selectedMemberUsername) || ssoSlots[0];
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex items-center justify-center p-4 relative overflow-hidden font-sans select-none">
@@ -321,16 +331,60 @@ export default function LoginPage({ onLoginSuccess }) {
       {/* Background Decorative Glow Gradients */}
       <div className="absolute -top-40 -left-40 w-96 h-96 bg-amber-500/10 rounded-full blur-3xl pointer-events-none" />
       <div className="absolute -bottom-40 -right-40 w-96 h-96 bg-blue-600/10 rounded-full blur-3xl pointer-events-none" />
+      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-amber-500/5 rounded-full blur-3xl pointer-events-none" />
 
       {/* Main Glassmorphic Login Card */}
-      <div className="w-full max-w-md bg-slate-900/90 border border-slate-800 backdrop-blur-xl rounded-3xl p-7 sm:p-8 shadow-2xl relative z-10 space-y-5">
+      <div className="w-full max-w-lg bg-slate-900/90 border border-slate-800 backdrop-blur-xl rounded-3xl p-6 sm:p-8 shadow-2xl relative z-10 space-y-6">
         
-        {/* Logo Banner */}
-        <div className="text-center space-y-1.5">
+        {/* Logo & Header Banner */}
+        <div className="text-center space-y-2">
           <Logo variant="full" printMode={false} className="mx-auto" />
-          <p className="text-xs text-slate-400 font-medium tracking-wide uppercase mt-1">
-            Enterprise Single Sign-On & Passkey Portal
-          </p>
+          <div className="inline-flex items-center space-x-1.5 bg-blue-500/10 border border-blue-500/20 px-3 py-1 rounded-full mt-1">
+            {/* Google G SVG */}
+            <svg className="w-3.5 h-3.5" viewBox="0 0 24 24">
+              <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+              <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+              <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"/>
+              <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"/>
+            </svg>
+            <span className="text-[11px] font-bold text-blue-400 uppercase tracking-wider">
+              Google Single Sign-On Access
+            </span>
+          </div>
+        </div>
+
+        {/* Tab Switcher: Google SSO vs Member Password */}
+        <div className="grid grid-cols-2 bg-slate-950 p-1 rounded-2xl border border-slate-800 text-xs font-bold">
+          <button
+            type="button"
+            onClick={() => {
+              setAuthMode('google');
+              setErrorMessage('');
+            }}
+            className={`py-2 rounded-xl transition-all flex items-center justify-center space-x-2 ${
+              authMode === 'google'
+                ? 'bg-blue-600 text-white shadow-md'
+                : 'text-slate-400 hover:text-slate-200'
+            }`}
+          >
+            <span>Google Sign-In</span>
+          </button>
+          
+          <button
+            type="button"
+            onClick={() => {
+              setAuthMode('password');
+              setErrorMessage('');
+            }}
+            className={`py-2 rounded-xl transition-all flex items-center justify-center space-x-2 ${
+              authMode === 'password'
+                ? 'bg-amber-500 text-slate-950 shadow-md font-extrabold'
+                : 'text-slate-400 hover:text-slate-200'
+            }`}
+          >
+            <KeyRound className="w-3.5 h-3.5" />
+            <span>Member Password</span>
+          </button>
         </div>
 
         {/* Success Alert */}
@@ -349,436 +403,358 @@ export default function LoginPage({ onLoginSuccess }) {
           </div>
         )}
 
-        {/* 3 Users Access Permission Overview Badge */}
-        <div className="bg-slate-950/80 border border-slate-800/80 rounded-2xl p-3.5 text-center space-y-2">
-          <div className="flex items-center justify-center space-x-2 text-amber-400 font-bold text-xs uppercase tracking-wider">
-            <UserCheck className="w-4 h-4" />
-            <span>Authorized User Access • 2 Admins & 1 Staff</span>
-          </div>
-
-          <div className="flex items-center justify-center space-x-2 text-[10px]">
-            <span className="bg-amber-500/10 text-amber-400 border border-amber-500/30 px-2 py-0.5 rounded-full font-bold">
-              👑 2 Admins (Passkey / Google)
-            </span>
-            <span className="text-slate-600">•</span>
-            <span className="bg-blue-500/10 text-blue-400 border border-blue-500/30 px-2 py-0.5 rounded-full font-bold">
-              💼 1 Staff
-            </span>
-          </div>
-        </div>
-
         {/* ============================================================== */}
-        {/* PRIMARY AUTHENTICATION: USERNAME & PASSKEY LOGIN FORM */}
+        {/* MODE 1: GOOGLE SSO AUTHENTICATION */}
         {/* ============================================================== */}
-        <div className="space-y-4">
-          
-          <form onSubmit={(e) => handlePasskeyLogin(e)} className="bg-slate-950/90 border border-amber-500/30 rounded-2xl p-4 space-y-3">
-            <div className="flex items-center justify-between">
-              <label className="text-xs font-bold text-amber-400 flex items-center space-x-1.5 uppercase tracking-wider">
-                <KeyRound className="w-4 h-4 text-amber-400" />
-                <span>Username & Google Passkey</span>
+        {authMode === 'google' && (
+          <div className="space-y-4">
+            <div className="space-y-2.5">
+              <label className="text-xs font-bold text-slate-300 uppercase tracking-wider flex items-center justify-between">
+                <span>Select Account to Sign In with Google</span>
+                <span className="text-[10px] text-amber-400 font-mono font-semibold">
+                  3 Authorized Accounts
+                </span>
               </label>
-              <span className="text-[10px] text-amber-400/90 bg-amber-500/10 px-2 py-0.5 rounded-full font-mono font-semibold border border-amber-500/20">
-                FIDO2 / WebAuthn
-              </span>
-            </div>
 
-            <div className="space-y-1.5">
-              <div className="relative">
-                <input
-                  type="text"
-                  value={usernameInput}
-                  onChange={(e) => setUsernameInput(e.target.value)}
-                  placeholder="Enter Username or Gmail (e.g. admin)"
-                  autoFocus
-                  className="w-full bg-slate-900 border border-slate-700/80 rounded-xl px-3.5 py-2.5 text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:border-amber-400 font-mono transition-colors"
-                />
-              </div>
-
-              {/* Quick Username Suggestions (Sets Username Input) */}
-              <div className="flex items-center flex-wrap gap-1.5 pt-1">
-                <span className="text-[10px] text-slate-400 font-medium">Suggestions:</span>
-                <button
-                  type="button"
-                  onClick={() => setUsernameInput('admin')}
-                  className="text-[10px] bg-slate-900 hover:bg-slate-800 text-slate-300 border border-slate-700/80 px-2 py-0.5 rounded-md font-mono transition-colors"
-                >
-                  admin
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setUsernameInput(ssoSlots[0]?.email || 'director.admin1@gmail.com')}
-                  className="text-[10px] bg-slate-900 hover:bg-slate-800 text-amber-300 border border-amber-500/30 px-2 py-0.5 rounded-md font-mono transition-colors"
-                >
-                  👑 Admin 1
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setUsernameInput(ssoSlots[1]?.email || 'nabeel.softcode@gmail.com')}
-                  className="text-[10px] bg-slate-900 hover:bg-slate-800 text-amber-300 border border-amber-500/30 px-2 py-0.5 rounded-md font-mono transition-colors"
-                >
-                  👑 Admin 2
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setUsernameInput(ssoSlots[2]?.email || 'billing.staff@gmail.com')}
-                  className="text-[10px] bg-slate-900 hover:bg-slate-800 text-blue-300 border border-blue-500/30 px-2 py-0.5 rounded-md font-mono transition-colors"
-                >
-                  💼 Staff
-                </button>
-              </div>
-            </div>
-
-            {/* PRIMARY: Verify Passkey & Sign In Button */}
-            <button
-              type="submit"
-              disabled={isPasskeyLoading || !usernameInput.trim()}
-              className="w-full bg-gradient-to-r from-amber-500 via-amber-400 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 font-extrabold py-3 px-4 rounded-xl text-sm flex items-center justify-center space-x-2.5 shadow-xl shadow-amber-500/20 hover:shadow-2xl transition-all transform active:scale-98 disabled:opacity-50 border border-amber-300/40 group mt-2"
-            >
-              <Fingerprint className="w-5 h-5 text-slate-950 animate-pulse group-hover:scale-110 transition-transform" />
-              <span>
-                {isPasskeyLoading ? 'Prompting Passkey Verification...' : 'Verify Passkey & Sign In'}
-              </span>
-            </button>
-
-            {/* Device Enrollment & Help */}
-            <div className="flex items-center justify-between text-[11px] pt-1">
+              {/* 1. Admin 1: Managing Director (MD) */}
               <button
                 type="button"
-                onClick={handleEnrollPasskey}
-                disabled={isEnrollingPasskey || !usernameInput.trim()}
-                className="text-amber-400 hover:text-amber-300 font-semibold flex items-center space-x-1 transition-colors underline disabled:opacity-40"
+                onClick={() => handleMemberGoogleSignIn(ssoSlots[0] || DEFAULT_MEMBERS[0])}
+                disabled={isGoogleLoading}
+                className="w-full bg-slate-950/70 hover:bg-slate-950 border border-slate-800 hover:border-amber-500/50 p-3.5 rounded-2xl flex items-center justify-between group transition-all transform active:scale-98 shadow-sm hover:shadow-md text-left"
               >
-                <KeyRound className="w-3 h-3" />
-                <span>{isEnrollingPasskey ? 'Enrolling...' : 'Enroll Passkey on this Device'}</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setShowConfigModal(true)}
-                className="text-slate-400 hover:text-slate-200 flex items-center space-x-1 transition-colors"
-              >
-                <Settings className="w-3 h-3" />
-                <span>Configure Access</span>
-              </button>
-            </div>
-          </form>
-
-          {/* Official Google Identity Services Container (When Client ID is loaded) */}
-          {clientId && (
-            <div ref={googleBtnContainerRef} className="w-full min-h-[44px] flex justify-center" />
-          )}
-
-          {/* Branded Google SSO Action Button */}
-          {(!clientId || isGoogleLoading) && (
-            <button
-              type="button"
-              onClick={handleCustomGoogleClick}
-              disabled={isGoogleLoading}
-              className="w-full bg-slate-950 hover:bg-slate-800 text-slate-200 font-bold py-2.5 px-4 rounded-2xl text-sm flex items-center justify-center space-x-3 shadow-md hover:shadow-lg transition-all transform active:scale-98 border border-slate-700"
-            >
-              {/* Official Google SVG Icon */}
-              <svg className="w-4 h-4 shrink-0" viewBox="0 0 24 24">
-                <path
-                  fill="#4285F4"
-                  d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
-                />
-                <path
-                  fill="#34A853"
-                  d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
-                />
-                <path
-                  fill="#FBBC05"
-                  d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"
-                />
-                <path
-                  fill="#EA4335"
-                  d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"
-                />
-              </svg>
-              <span>{isGoogleLoading ? 'Connecting to Google...' : 'Continue with Google Account'}</span>
-            </button>
-          )}
-
-          {/* 3 Authorized User Profiles (Click to select & verify passkey) */}
-          <div className="pt-2 border-t border-slate-800/80 space-y-2">
-            <div className="flex items-center justify-between text-xs text-slate-400">
-              <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">
-                Authorized Accounts (Select & Verify Passkey)
-              </span>
-              <button
-                type="button"
-                onClick={() => setShowConfigModal(true)}
-                className="text-[11px] text-amber-400 hover:text-amber-300 flex items-center space-x-1 transition-colors"
-              >
-                <Settings className="w-3 h-3" />
-                <span>Configure Accounts</span>
-              </button>
-            </div>
-
-            <div className="grid grid-cols-1 gap-1.5">
-              {/* Admin 1 */}
-              <button
-                type="button"
-                onClick={() => {
-                  const u = ssoSlots[0]?.email || 'director.admin1@gmail.com';
-                  setUsernameInput(u);
-                  setErrorMessage('');
-                }}
-                className={`bg-slate-950/80 hover:bg-slate-800 border p-2 rounded-xl flex items-center justify-between transition-all group text-left ${
-                  usernameInput === (ssoSlots[0]?.email || 'director.admin1@gmail.com') || usernameInput === 'admin'
-                    ? 'border-amber-500/80 bg-amber-500/10'
-                    : 'border-slate-800 hover:border-amber-500/50'
-                }`}
-              >
-                <div className="flex items-center space-x-2">
-                  <span className="text-base">👑</span>
+                <div className="flex items-center space-x-3">
+                  <div className="w-10 h-10 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-xl shrink-0 group-hover:scale-105 transition-transform">
+                    👑
+                  </div>
                   <div>
-                    <div className="text-xs font-bold text-slate-200 group-hover:text-amber-400 flex items-center space-x-1.5">
-                      <span>Admin 1 (Managing Director)</span>
-                      <span className="text-[9px] text-amber-400 font-mono bg-amber-500/10 px-1 rounded">Passkey Enabled</span>
+                    <div className="flex items-center space-x-2">
+                      <span className="text-xs font-bold text-slate-100 group-hover:text-amber-300 transition-colors">
+                        Admin 1: Managing Director (MD)
+                      </span>
+                      <span className="text-[9px] bg-amber-400/20 text-amber-300 font-bold px-1.5 py-0.5 rounded uppercase font-mono">
+                        ADMIN
+                      </span>
                     </div>
-                    <div className="text-[10px] text-slate-500 font-mono">
-                      {ssoSlots[0]?.email || 'director.admin1@gmail.com'}
+                    <div className="text-[11px] text-slate-400 font-mono truncate max-w-[240px]">
+                      {ssoSlots[0]?.email || 'smartechpalakkad@gmail.com'}
                     </div>
                   </div>
                 </div>
-                <span className="text-[9px] font-extrabold px-2 py-0.5 rounded-full uppercase bg-amber-500/10 text-amber-400 border border-amber-500/30">
-                  ADMIN
-                </span>
+
+                <div className="flex items-center space-x-1.5 text-xs font-bold text-amber-400 group-hover:translate-x-1 transition-all">
+                  {activeSlotLoading === (ssoSlots[0]?.id || 'slot-admin-1') ? (
+                    <RefreshCw className="w-4 h-4 animate-spin text-amber-400" />
+                  ) : (
+                    <>
+                      <span className="hidden sm:inline text-[11px]">Sign In with Google</span>
+                      <ArrowRight className="w-4 h-4" />
+                    </>
+                  )}
+                </div>
               </button>
 
-              {/* Admin 2 */}
+              {/* 2. Admin 2: Developer */}
               <button
                 type="button"
-                onClick={() => {
-                  const u = ssoSlots[1]?.email || 'nabeel.softcode@gmail.com';
-                  setUsernameInput(u);
-                  setErrorMessage('');
-                }}
-                className={`bg-slate-950/80 hover:bg-slate-800 border p-2 rounded-xl flex items-center justify-between transition-all group text-left ${
-                  usernameInput === (ssoSlots[1]?.email || 'nabeel.softcode@gmail.com')
-                    ? 'border-amber-500/80 bg-amber-500/10'
-                    : 'border-slate-800 hover:border-amber-500/50'
-                }`}
+                onClick={() => handleMemberGoogleSignIn(ssoSlots[1] || DEFAULT_MEMBERS[1])}
+                disabled={isGoogleLoading}
+                className="w-full bg-slate-950/70 hover:bg-slate-950 border border-slate-800 hover:border-blue-500/50 p-3.5 rounded-2xl flex items-center justify-between group transition-all transform active:scale-98 shadow-sm hover:shadow-md text-left"
               >
-                <div className="flex items-center space-x-2">
-                  <span className="text-base">👑</span>
+                <div className="flex items-center space-x-3">
+                  <div className="w-10 h-10 rounded-xl bg-blue-500/10 border border-blue-500/30 flex items-center justify-center text-xl shrink-0 group-hover:scale-105 transition-transform">
+                    💻
+                  </div>
                   <div>
-                    <div className="text-xs font-bold text-slate-200 group-hover:text-amber-400 flex items-center space-x-1.5">
-                      <span>Admin 2 (Co-Director / Partner)</span>
-                      <span className="text-[9px] text-amber-400 font-mono bg-amber-500/10 px-1 rounded">Passkey Enabled</span>
+                    <div className="flex items-center space-x-2">
+                      <span className="text-xs font-bold text-slate-100 group-hover:text-blue-300 transition-colors">
+                        Admin 2: Developer
+                      </span>
+                      <span className="text-[9px] bg-blue-400/20 text-blue-300 font-bold px-1.5 py-0.5 rounded uppercase font-mono">
+                        ADMIN
+                      </span>
                     </div>
-                    <div className="text-[10px] text-slate-500 font-mono">
+                    <div className="text-[11px] text-slate-400 font-mono truncate max-w-[240px]">
                       {ssoSlots[1]?.email || 'nabeel.softcode@gmail.com'}
                     </div>
                   </div>
                 </div>
-                <span className="text-[9px] font-extrabold px-2 py-0.5 rounded-full uppercase bg-amber-500/10 text-amber-400 border border-amber-500/30">
-                  ADMIN
-                </span>
+
+                <div className="flex items-center space-x-1.5 text-xs font-bold text-blue-400 group-hover:translate-x-1 transition-all">
+                  {activeSlotLoading === (ssoSlots[1]?.id || 'slot-admin-2') ? (
+                    <RefreshCw className="w-4 h-4 animate-spin text-blue-400" />
+                  ) : (
+                    <>
+                      <span className="hidden sm:inline text-[11px]">Sign In with Google</span>
+                      <ArrowRight className="w-4 h-4" />
+                    </>
+                  )}
+                </div>
               </button>
 
-              {/* Staff */}
+              {/* 3. Staff: Billing & Accounts */}
               <button
                 type="button"
-                onClick={() => {
-                  const u = ssoSlots[2]?.email || 'billing.staff@gmail.com';
-                  setUsernameInput(u);
-                  setErrorMessage('');
-                }}
-                className={`bg-slate-950/80 hover:bg-slate-800 border p-2 rounded-xl flex items-center justify-between transition-all group text-left ${
-                  usernameInput === (ssoSlots[2]?.email || 'billing.staff@gmail.com')
-                    ? 'border-blue-500/80 bg-blue-500/10'
-                    : 'border-slate-800 hover:border-blue-500/50'
-                }`}
+                onClick={() => handleMemberGoogleSignIn(ssoSlots[2] || DEFAULT_MEMBERS[2])}
+                disabled={isGoogleLoading}
+                className="w-full bg-slate-950/70 hover:bg-slate-950 border border-slate-800 hover:border-emerald-500/50 p-3.5 rounded-2xl flex items-center justify-between group transition-all transform active:scale-98 shadow-sm hover:shadow-md text-left"
               >
-                <div className="flex items-center space-x-2">
-                  <span className="text-base">💼</span>
+                <div className="flex items-center space-x-3">
+                  <div className="w-10 h-10 rounded-xl bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center text-xl shrink-0 group-hover:scale-105 transition-transform">
+                    💼
+                  </div>
                   <div>
-                    <div className="text-xs font-bold text-slate-200 group-hover:text-blue-400">
-                      Staff (Billing & Accounts)
+                    <div className="flex items-center space-x-2">
+                      <span className="text-xs font-bold text-slate-100 group-hover:text-emerald-300 transition-colors">
+                        Staff: Billing & Accounts
+                      </span>
+                      <span className="text-[9px] bg-emerald-400/20 text-emerald-300 font-bold px-1.5 py-0.5 rounded uppercase font-mono">
+                        STAFF
+                      </span>
                     </div>
-                    <div className="text-[10px] text-slate-500 font-mono">
-                      {ssoSlots[2]?.email || 'billing.staff@gmail.com'}
+                    <div className="text-[11px] text-slate-400 font-mono truncate max-w-[240px]">
+                      {ssoSlots[2]?.email || 'Click to sign in with Google'}
                     </div>
                   </div>
                 </div>
-                <span className="text-[9px] font-extrabold px-2 py-0.5 rounded-full uppercase bg-blue-500/10 text-blue-400 border border-blue-500/30">
-                  STAFF
-                </span>
+
+                <div className="flex items-center space-x-1.5 text-xs font-bold text-emerald-400 group-hover:translate-x-1 transition-all">
+                  {activeSlotLoading === (ssoSlots[2]?.id || 'slot-staff-1') ? (
+                    <RefreshCw className="w-4 h-4 animate-spin text-emerald-400" />
+                  ) : (
+                    <>
+                      <span className="hidden sm:inline text-[11px]">Sign In with Google</span>
+                      <ArrowRight className="w-4 h-4" />
+                    </>
+                  )}
+                </div>
               </button>
             </div>
+
+            {/* Official GIS Button Container if configured */}
+            {clientId && (
+              <div ref={googleBtnContainerRef} className="w-full min-h-[44px] flex justify-center pt-1" />
+            )}
           </div>
+        )}
 
-        </div>
+        {/* ============================================================== */}
+        {/* MODE 2: MEMBER PASSWORD AUTHENTICATION */}
+        {/* ============================================================== */}
+        {authMode === 'password' && (
+          <form onSubmit={handlePasswordLogin} className="space-y-4">
+            <div className="space-y-2">
+              <label className="text-xs font-bold text-slate-300 uppercase tracking-wider">
+                Select Member
+              </label>
 
-        {/* Security Signoff Footer */}
-        <div className="text-center text-[10px] text-slate-500 font-medium pt-1">
-          Secured by Google Passkey & FIDO2 WebAuthn • SMART TECH ™
+              <div className="grid grid-cols-3 gap-2">
+                {ssoSlots.map((slot) => {
+                  const isSelected = slot.username === selectedMemberUsername;
+                  return (
+                    <button
+                      key={slot.id}
+                      type="button"
+                      onClick={() => {
+                        setSelectedMemberUsername(slot.username);
+                        setPasswordInput('');
+                        setErrorMessage('');
+                      }}
+                      className={`p-2.5 rounded-xl border text-center transition-all ${
+                        isSelected
+                          ? 'bg-amber-500/20 border-amber-400 text-amber-300 shadow'
+                          : 'bg-slate-950 border-slate-800 text-slate-300 hover:border-slate-700'
+                      }`}
+                    >
+                      <div className="text-base">{slot.avatar}</div>
+                      <div className="text-[11px] font-bold truncate mt-0.5">
+                        {slot.username === 'admin1' ? 'MD' : slot.username === 'admin2' ? 'Dev' : 'Staff'}
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-xs font-bold text-slate-300 flex items-center justify-between">
+                <span>Password for {selectedMember.name}</span>
+              </label>
+
+              <div className="relative">
+                <input
+                  type={showPassword ? 'text' : 'password'}
+                  value={passwordInput}
+                  onChange={(e) => setPasswordInput(e.target.value)}
+                  placeholder={`Enter password for ${selectedMember.username}...`}
+                  autoFocus
+                  className="w-full bg-slate-950 border border-slate-700 rounded-xl pl-3.5 pr-10 py-2.5 text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:border-amber-400 font-mono"
+                />
+                
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-200"
+                >
+                  {showPassword ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                </button>
+              </div>
+
+              <div className="flex items-center justify-between pt-1 text-[10px]">
+                <span className="text-slate-500">Default: {selectedMember.username}</span>
+                <button
+                  type="button"
+                  onClick={() => setPasswordInput(selectedMember.username)}
+                  className="text-amber-400 hover:underline"
+                >
+                  Fill Default
+                </button>
+              </div>
+            </div>
+
+            <button
+              type="submit"
+              disabled={isPasswordLoading || !passwordInput.trim()}
+              className="w-full bg-amber-500 hover:bg-amber-400 text-slate-950 font-extrabold py-3 px-4 rounded-xl text-xs flex items-center justify-center space-x-2 shadow-lg transition-all disabled:opacity-50"
+            >
+              {isPasswordLoading ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Lock className="w-3.5 h-3.5" />}
+              <span>{isPasswordLoading ? 'Verifying...' : `Sign In as ${selectedMember.name}`}</span>
+            </button>
+          </form>
+        )}
+
+        {/* Footer Actions: Configure Google SSO & Switch to Password Mode */}
+        <div className="flex items-center justify-between pt-3 border-t border-slate-800 text-xs">
+          <button
+            type="button"
+            onClick={() => setShowConfigModal(true)}
+            className="text-slate-400 hover:text-amber-400 flex items-center space-x-1 transition-colors hover:underline"
+          >
+            <Settings className="w-3.5 h-3.5" />
+            <span>Configure Google Emails / Client ID</span>
+          </button>
+
+          <span className="text-slate-500 flex items-center space-x-1 text-[11px]">
+            <Sparkles className="w-3 h-3 text-amber-400" />
+            <span>Smart Tech v1.0</span>
+          </span>
         </div>
 
       </div>
 
       {/* ============================================================== */}
-      {/* GOOGLE SSO, PASSKEY & 3-USER ACCESS CONFIGURATION MODAL */}
+      {/* GOOGLE SSO & 3-MEMBER EMAIL CONFIGURATION MODAL */}
       {/* ============================================================== */}
       {showConfigModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm animate-fade-in">
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-lg p-6 shadow-2xl relative space-y-4 max-h-[90vh] overflow-y-auto">
+        <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-700/80 rounded-3xl p-6 sm:p-7 max-w-lg w-full shadow-2xl space-y-4 animate-scale-up">
             
             <div className="flex items-center justify-between pb-3 border-b border-slate-800">
-              <div className="flex items-center space-x-2">
-                <div className="p-2 bg-amber-500/10 rounded-lg text-amber-400">
-                  <Fingerprint className="w-5 h-5" />
-                </div>
-                <div>
-                  <h3 className="text-sm font-bold text-white">Google SSO & Passkey Setup</h3>
-                  <p className="text-xs text-slate-400">Manage OAuth Client ID, Passkeys & 3 User Slots</p>
-                </div>
+              <div className="flex items-center space-x-2 text-amber-400 font-bold text-sm">
+                <Settings className="w-4 h-4" />
+                <span>Configure Google Sign-In & Member Emails</span>
               </div>
               <button
-                type="button"
                 onClick={() => setShowConfigModal(false)}
-                className="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800"
+                className="text-slate-400 hover:text-slate-200 p-1 rounded-lg hover:bg-slate-800 transition-colors"
               >
-                <X className="w-5 h-5" />
+                <X className="w-4 h-4" />
               </button>
             </div>
 
-            {/* Device Passkey Enrollment Button */}
-            <div className="bg-gradient-to-br from-amber-500/10 via-slate-900 to-slate-950 p-3.5 rounded-xl border border-amber-500/30 space-y-2">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center space-x-2 text-xs font-bold text-amber-300">
-                  <KeyRound className="w-4 h-4 text-amber-400" />
-                  <span>Admin Device Passkey Enrollment</span>
-                </div>
-                <span className="text-[10px] bg-amber-400/20 text-amber-300 px-2 py-0.5 rounded font-mono font-bold">
-                  FIDO2 / WebAuthn
-                </span>
+            {saveSuccessMsg && (
+              <div className="bg-emerald-950/60 border border-emerald-500/30 text-emerald-300 text-xs px-3.5 py-2 rounded-xl flex items-center space-x-2">
+                <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                <span>Google configuration updated successfully!</span>
               </div>
-              <p className="text-[11px] text-slate-300">
-                Enroll this device's Windows Hello (PIN, Fingerprint, Face ID) or Google Titan/YubiKey for 1-touch Admin authentication.
-              </p>
-              <button
-                type="button"
-                onClick={handleEnrollPasskey}
-                disabled={isEnrollingPasskey}
-                className="w-full bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold py-2 rounded-lg text-xs flex items-center justify-center space-x-1.5 shadow-md shadow-amber-500/20 transition-all disabled:opacity-50"
-              >
-                <Fingerprint className="w-4 h-4" />
-                <span>{isEnrollingPasskey ? 'Enrolling on this device...' : 'Enroll Current Device as Admin Passkey'}</span>
-              </button>
-            </div>
+            )}
 
-            <form onSubmit={handleSaveConfiguration} className="space-y-4">
+            <form onSubmit={handleSaveConfiguration} className="space-y-3.5">
               
-              {/* Google Client ID */}
-              <div>
-                <label className="block text-xs font-semibold text-slate-300 mb-1">
-                  Google OAuth Client ID (Optional for Live Google Identity button)
+              {/* Google Client ID (Optional / Custom) */}
+              <div className="space-y-1">
+                <label className="text-[11px] font-semibold text-slate-300 flex items-center justify-between">
+                  <span>Google OAuth Client ID</span>
+                  <span className="text-[10px] text-slate-500 font-mono">console.cloud.google.com</span>
                 </label>
                 <input
                   type="text"
                   value={inputClientId}
                   onChange={(e) => setInputClientId(e.target.value)}
-                  placeholder="e.g. 123456789-abcdef.apps.googleusercontent.com"
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-200 placeholder-slate-600 focus:outline-none focus:border-amber-500 font-mono"
+                  placeholder="e.g. 123456789-abc.apps.googleusercontent.com"
+                  className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:border-amber-400 font-mono"
                 />
               </div>
 
-              {/* 3 User Email Slots Configuration */}
+              {/* 3 Member Emails */}
               <div className="space-y-2.5 pt-2 border-t border-slate-800">
-                <div className="flex items-center justify-between text-xs">
-                  <span className="font-bold text-slate-200 flex items-center space-x-1.5">
-                    <Users className="w-4 h-4 text-amber-400" />
-                    <span>3 Authorized User Google Accounts</span>
-                  </span>
-                  <span className="text-[10px] text-slate-500">Auto-Role Mapping</span>
+                <div className="text-[11px] font-bold text-slate-300 uppercase tracking-wider">
+                  Associated Google Emails for 3 Members
                 </div>
 
-                {/* Admin 1 */}
-                <div className="bg-slate-950 p-2.5 rounded-xl border border-slate-800/80 space-y-1">
+                {/* Slot 1: MD */}
+                <div className="space-y-1 bg-slate-950/60 p-2.5 rounded-xl border border-slate-800">
                   <div className="flex items-center justify-between text-[11px]">
-                    <span className="font-semibold text-amber-400 flex items-center space-x-1">
-                      <span>👑 Admin 1 (Managing Director)</span>
-                    </span>
-                    <span className="text-[9px] bg-amber-500/20 text-amber-400 font-bold px-1.5 py-0.2 rounded uppercase">
-                      ADMIN
-                    </span>
+                    <span className="font-bold text-amber-400">👑 Admin 1: Managing Director (MD)</span>
+                    <span className="text-[9px] bg-amber-500/20 text-amber-300 px-1.5 py-0.2 rounded font-mono">ADMIN</span>
                   </div>
                   <input
                     type="email"
                     value={ssoSlots[0]?.email || ''}
                     onChange={(e) => handleSlotEmailChange('slot-admin-1', e.target.value)}
-                    placeholder="e.g. director@smarttech.com or gmail"
-                    className="w-full bg-slate-900 border border-slate-800 rounded-lg px-2.5 py-1.5 text-xs text-slate-200 placeholder-slate-600 focus:outline-none focus:border-amber-500 font-mono"
+                    placeholder="e.g. smartechpalakkad@gmail.com"
+                    className="w-full bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-slate-100 placeholder-slate-500 font-mono focus:border-amber-400 focus:outline-none"
                   />
                 </div>
 
-                {/* Admin 2 */}
-                <div className="bg-slate-950 p-2.5 rounded-xl border border-slate-800/80 space-y-1">
+                {/* Slot 2: Developer */}
+                <div className="space-y-1 bg-slate-950/60 p-2.5 rounded-xl border border-slate-800">
                   <div className="flex items-center justify-between text-[11px]">
-                    <span className="font-semibold text-amber-400 flex items-center space-x-1">
-                      <span>👑 Admin 2 (Co-Director / Partner)</span>
-                    </span>
-                    <span className="text-[9px] bg-amber-500/20 text-amber-400 font-bold px-1.5 py-0.2 rounded uppercase">
-                      ADMIN
-                    </span>
+                    <span className="font-bold text-blue-400">💻 Admin 2: Developer</span>
+                    <span className="text-[9px] bg-blue-500/20 text-blue-300 px-1.5 py-0.2 rounded font-mono">ADMIN</span>
                   </div>
                   <input
                     type="email"
                     value={ssoSlots[1]?.email || ''}
                     onChange={(e) => handleSlotEmailChange('slot-admin-2', e.target.value)}
-                    placeholder="e.g. partner@smarttech.com or gmail"
-                    className="w-full bg-slate-900 border border-slate-800 rounded-lg px-2.5 py-1.5 text-xs text-slate-200 placeholder-slate-600 focus:outline-none focus:border-amber-500 font-mono"
+                    placeholder="e.g. nabeel.softcode@gmail.com"
+                    className="w-full bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-slate-100 placeholder-slate-500 font-mono focus:border-blue-400 focus:outline-none"
                   />
                 </div>
 
-                {/* Staff */}
-                <div className="bg-slate-950 p-2.5 rounded-xl border border-slate-800/80 space-y-1">
+                {/* Slot 3: Staff */}
+                <div className="space-y-1 bg-slate-950/60 p-2.5 rounded-xl border border-slate-800">
                   <div className="flex items-center justify-between text-[11px]">
-                    <span className="font-semibold text-blue-400 flex items-center space-x-1">
-                      <span>💼 Staff (Billing & Operations)</span>
-                    </span>
-                    <span className="text-[9px] bg-blue-500/20 text-blue-400 font-bold px-1.5 py-0.2 rounded uppercase">
-                      STAFF
-                    </span>
+                    <span className="font-bold text-emerald-400">💼 Staff: Billing & Accounts</span>
+                    <span className="text-[9px] bg-emerald-500/20 text-emerald-300 px-1.5 py-0.2 rounded font-mono">STAFF</span>
                   </div>
                   <input
                     type="email"
                     value={ssoSlots[2]?.email || ''}
                     onChange={(e) => handleSlotEmailChange('slot-staff-1', e.target.value)}
-                    placeholder="e.g. staff@smarttech.com or gmail"
-                    className="w-full bg-slate-900 border border-slate-800 rounded-lg px-2.5 py-1.5 text-xs text-slate-200 placeholder-slate-600 focus:outline-none focus:border-blue-500 font-mono"
+                    placeholder="e.g. billing.staff@gmail.com"
+                    className="w-full bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-slate-100 placeholder-slate-500 font-mono focus:border-emerald-400 focus:outline-none"
                   />
                 </div>
-
               </div>
 
-              {saveSuccessMsg && (
-                <div className="bg-emerald-950/60 border border-emerald-500/30 text-emerald-300 text-xs px-3 py-2 rounded-xl flex items-center space-x-2">
-                  <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-                  <span>Configuration & 3 User Slots saved successfully!</span>
-                </div>
-              )}
-
-              <div className="flex items-center justify-end space-x-2 pt-2">
+              <div className="flex items-center justify-end space-x-2 pt-3 border-t border-slate-800">
                 <button
                   type="button"
                   onClick={() => setShowConfigModal(false)}
-                  className="px-4 py-2 rounded-xl text-xs text-slate-400 hover:text-white hover:bg-slate-800"
+                  className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-xs font-semibold transition-colors"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 font-bold px-4 py-2 rounded-xl text-xs shadow-md shadow-amber-500/20 transition-all"
+                  className="px-4 py-2 bg-amber-500 hover:bg-amber-400 text-slate-950 rounded-xl text-xs font-bold transition-all"
                 >
-                  Save Access Setup
+                  Save Configuration
                 </button>
               </div>
             </form>
+
           </div>
         </div>
       )}
@@ -786,5 +762,3 @@ export default function LoginPage({ onLoginSuccess }) {
     </div>
   );
 }
-
-

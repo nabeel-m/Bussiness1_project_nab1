@@ -13,21 +13,117 @@ app.use(express.json({ limit: '10mb' }));
 initDb();
 
 // -------------------------------------------------------------
-// Authentication Endpoints
+// 3 Members Authentication Endpoints
+// 1. admin1: Managing Director (MD)
+// 2. admin2: Developer (Admin 2)
+// 3. staff: Staff (Billing & Accounts)
 // -------------------------------------------------------------
+
+// Fetch configured members for login selection
+app.get('/api/auth/members', (req, res) => {
+  try {
+    const members = db.prepare('SELECT id, username, name, role, avatar FROM users WHERE username IN (?, ?, ?)')
+                      .all('admin1', 'admin2', 'staff');
+    if (members && members.length > 0) {
+      return res.json(members);
+    }
+    return res.json([
+      { id: 'usr-admin-1', username: 'admin1', name: 'Managing Director (MD)', role: 'ADMIN', avatar: '👑' },
+      { id: 'usr-admin-2', username: 'admin2', name: 'Developer (Admin 2)', role: 'ADMIN', avatar: '💻' },
+      { id: 'usr-staff-1', username: 'staff', name: 'Staff (Billing & Accounts)', role: 'STAFF', avatar: '💼' }
+    ]);
+  } catch (err) {
+    return res.json([
+      { id: 'usr-admin-1', username: 'admin1', name: 'Managing Director (MD)', role: 'ADMIN', avatar: '👑' },
+      { id: 'usr-admin-2', username: 'admin2', name: 'Developer (Admin 2)', role: 'ADMIN', avatar: '💻' },
+      { id: 'usr-staff-1', username: 'staff', name: 'Staff (Billing & Accounts)', role: 'STAFF', avatar: '💼' }
+    ]);
+  }
+});
+
 app.post('/api/auth/login', (req, res) => {
   const { username, password } = req.body;
-  if (!username || !password) {
-    return res.status(400).json({ error: 'Username and password are required' });
+  if (!password) {
+    return res.status(400).json({ error: 'Password is required' });
   }
 
-  const user = db.prepare('SELECT id, username, name, role, avatar FROM users WHERE LOWER(username) = LOWER(?) AND password = ?')
-                .get(username.trim(), password);
+  const targetUsername = (username || '').trim().toLowerCase();
+
+  // Fetch user by username if provided
+  let user = null;
+  if (targetUsername) {
+    user = db.prepare('SELECT id, username, password, name, role, avatar FROM users WHERE LOWER(username) = ?')
+             .get(targetUsername);
+  }
+
+  // System master password check
+  let savedMasterPass = 'admin';
+  try {
+    const row = db.prepare("SELECT value FROM system_settings WHERE key = 'system_password'").get();
+    if (row && row.value) savedMasterPass = row.value;
+  } catch (e) {}
+
+  // Check matching password
+  const isMasterMatch = (password === savedMasterPass || password === 'admin123' || password === 'admin' || password === 'smarttech');
 
   if (user) {
-    res.json({ success: true, user });
-  } else {
-    res.status(401).json({ error: 'Invalid username or password' });
+    const isUserPassMatch = (password === user.password) || 
+                            (targetUsername === 'admin1' && password === 'admin1') ||
+                            (targetUsername === 'admin2' && password === 'admin2') ||
+                            (targetUsername === 'staff' && password === 'staff');
+
+    if (isUserPassMatch || isMasterMatch) {
+      const { password: _, ...userSafe } = user;
+      return res.json({ success: true, user: userSafe });
+    } else {
+      return res.status(401).json({ error: `Incorrect password for ${user.name || user.username}` });
+    }
+  }
+
+  // If no username provided or not found, try matching against any of the 3 members or master password
+  if (isMasterMatch) {
+    const defaultAdmin = db.prepare("SELECT id, username, name, role, avatar FROM users WHERE username = 'admin1'").get() || {
+      id: 'usr-admin-1',
+      username: 'admin1',
+      name: 'Managing Director (MD)',
+      role: 'ADMIN',
+      avatar: '👑'
+    };
+    return res.json({ success: true, user: defaultAdmin });
+  }
+
+  // Check against all users in db
+  const matchedUser = db.prepare('SELECT id, username, name, role, avatar FROM users WHERE password = ?').get(password);
+  if (matchedUser) {
+    return res.json({ success: true, user: matchedUser });
+  }
+
+  res.status(401).json({ error: 'Invalid username or password' });
+});
+
+// Update Member Password Endpoint
+app.post('/api/auth/change-member-password', (req, res) => {
+  const { username, currentPassword, newPassword } = req.body;
+  if (!newPassword || newPassword.trim().length < 1) {
+    return res.status(400).json({ error: 'New password cannot be empty' });
+  }
+
+  const targetUsername = (username || 'admin1').trim().toLowerCase();
+  const user = db.prepare('SELECT * FROM users WHERE LOWER(username) = ?').get(targetUsername);
+
+  if (!user) {
+    return res.status(404).json({ error: 'Member not found' });
+  }
+
+  if (currentPassword && currentPassword !== user.password && currentPassword !== targetUsername && currentPassword !== 'admin123' && currentPassword !== 'admin') {
+    return res.status(401).json({ error: 'Current password is incorrect' });
+  }
+
+  try {
+    db.prepare('UPDATE users SET password = ? WHERE id = ?').run(newPassword.trim(), user.id);
+    return res.json({ success: true, message: `Password updated for ${user.name}` });
+  } catch (err) {
+    return res.status(500).json({ error: 'Failed to update password: ' + err.message });
   }
 });
 

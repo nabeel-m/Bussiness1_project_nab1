@@ -86,6 +86,10 @@ export function initDb() {
       deviceLabel TEXT,
       createdAt TEXT NOT NULL
     );
+    CREATE TABLE IF NOT EXISTS system_settings (
+      key TEXT PRIMARY KEY,
+      value TEXT NOT NULL
+    );
   `);
 
   // Migrate users table columns if missing
@@ -104,22 +108,35 @@ export function initDb() {
     console.warn('Migration note on users table:', err.message);
   }
 
-  // Seed default 3 SSO Access Slots (2 Admins, 1 Staff)
-  const checkSlots = db.prepare('SELECT COUNT(*) as count FROM sso_access_slots').get();
-  if (checkSlots.count === 0) {
-    const insertSlot = db.prepare(`
-      INSERT INTO sso_access_slots (id, slotName, email, role, defaultName, avatar)
-      VALUES (?, ?, ?, ?, ?, ?)
-    `);
-    insertSlot.run('slot-admin-1', 'Admin 1 (Managing Director)', '', 'ADMIN', 'Managing Director', '👑');
-    insertSlot.run('slot-admin-2', 'Admin 2 (Co-Director / Partner)', 'nabeel.softcode@gmail.com', 'ADMIN', 'Co-Director / Partner', '👑');
-    insertSlot.run('slot-staff-1', 'Staff (Billing & Accounts)', '', 'STAFF', 'Billing Operator', '💼');
-  } else {
-    // Ensure Admin 2 email is updated
-    try {
-      db.prepare("UPDATE sso_access_slots SET email = 'nabeel.softcode@gmail.com' WHERE id = 'slot-admin-2' AND (email = '' OR email LIKE '%admin2%' OR email LIKE '%partner%')").run();
-    } catch (e) {}
+  // Seed or update the 3 Google SSO Access Slots
+  const defaultSlots = [
+    { id: 'slot-admin-1', slotName: 'Admin 1: Managing Director (MD)', email: 'smartechpalakkad@gmail.com', role: 'ADMIN', defaultName: 'Managing Director (MD)', avatar: '👑' },
+    { id: 'slot-admin-2', slotName: 'Admin 2: Developer', email: 'nabeel.softcode@gmail.com', role: 'ADMIN', defaultName: 'Developer (Admin 2)', avatar: '💻' },
+    { id: 'slot-staff-1', slotName: 'Staff: Billing & Accounts', email: '', role: 'STAFF', defaultName: 'Staff (Billing & Accounts)', avatar: '💼' }
+  ];
+
+  for (const s of defaultSlots) {
+    const existing = db.prepare('SELECT * FROM sso_access_slots WHERE id = ?').get(s.id);
+    if (!existing) {
+      db.prepare(`
+        INSERT INTO sso_access_slots (id, slotName, email, role, defaultName, avatar)
+        VALUES (?, ?, ?, ?, ?, ?)
+      `).run(s.id, s.slotName, s.email, s.role, s.defaultName, s.avatar);
+    } else {
+      db.prepare(`
+        UPDATE sso_access_slots 
+        SET slotName = ?, role = ?, defaultName = ?, avatar = ?,
+            email = CASE WHEN (email IS NULL OR email = '' OR email LIKE '%director%' OR id = 'slot-admin-1') AND ? != '' THEN ? ELSE email END
+        WHERE id = ?
+      `).run(s.slotName, s.role, s.defaultName, s.avatar, s.email, s.email, s.id);
+    }
   }
+
+  // Ensure Admin 1 email is explicitly set to smartechpalakkad@gmail.com
+  try {
+    db.prepare("UPDATE sso_access_slots SET email = 'smartechpalakkad@gmail.com' WHERE id = 'slot-admin-1'").run();
+    db.prepare("UPDATE users SET email = 'smartechpalakkad@gmail.com' WHERE username = 'admin1' OR id = 'usr-admin-1'").run();
+  } catch (e) {}
 
   // Seed default company info
   const checkCompany = db.prepare('SELECT COUNT(*) as count FROM company_info').get();
@@ -130,13 +147,33 @@ export function initDb() {
     `).run();
   }
 
-  // Seed default users if empty
-  const checkUsers = db.prepare('SELECT COUNT(*) as count FROM users').get();
-  if (checkUsers.count === 0) {
-    const insertUser = db.prepare('INSERT INTO users (id, username, password, name, role, avatar) VALUES (?, ?, ?, ?, ?, ?)');
-    insertUser.run('usr-admin-1', 'admin1', '', 'Managing Director (Admin 1)', 'ADMIN', '👑');
-    insertUser.run('usr-admin-2', 'admin2', '', 'Co-Director (Admin 2)', 'ADMIN', '👑');
-    insertUser.run('usr-staff-1', 'staff', '', 'Billing Operator (Staff)', 'STAFF', '💼');
+  // Seed default system password in system_settings if empty
+  const checkSysPass = db.prepare("SELECT value FROM system_settings WHERE key = 'system_password'").get();
+  if (!checkSysPass) {
+    db.prepare("INSERT INTO system_settings (key, value) VALUES ('system_password', 'admin123')").run();
+  }
+
+  // Seed or sync the 3 configured login members
+  const memberSpecs = [
+    { id: 'usr-admin-1', username: 'admin1', name: 'Managing Director (MD)', role: 'ADMIN', avatar: '👑', defaultPass: 'admin1' },
+    { id: 'usr-admin-2', username: 'admin2', name: 'Developer (Admin 2)', role: 'ADMIN', avatar: '💻', defaultPass: 'admin2' },
+    { id: 'usr-staff-1', username: 'staff', name: 'Staff (Billing & Accounts)', role: 'STAFF', avatar: '💼', defaultPass: 'staff' }
+  ];
+
+  for (const spec of memberSpecs) {
+    const existing = db.prepare('SELECT * FROM users WHERE LOWER(username) = LOWER(?)').get(spec.username);
+    if (!existing) {
+      db.prepare('INSERT INTO users (id, username, password, name, role, avatar) VALUES (?, ?, ?, ?, ?, ?)')
+        .run(spec.id, spec.username, spec.defaultPass, spec.name, spec.role, spec.avatar);
+    } else {
+      // Update name, role, avatar if changed, and set password if empty
+      db.prepare(`
+        UPDATE users 
+        SET name = ?, role = ?, avatar = ?,
+            password = CASE WHEN password IS NULL OR password = '' THEN ? ELSE password END
+        WHERE LOWER(username) = LOWER(?)
+      `).run(spec.name, spec.role, spec.avatar, spec.defaultPass, spec.username);
+    }
   }
 
   // Seed default client & transactions if empty
