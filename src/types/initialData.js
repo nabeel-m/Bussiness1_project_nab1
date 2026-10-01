@@ -13,25 +13,17 @@ export const INITIAL_USERS = [
     id: "usr-admin",
     username: "admin",
     password: "admin123",
-    name: "System Admin / Owner",
+    name: "Administrator (Admin)",
     role: "ADMIN",
     avatar: "👑"
   },
   {
-    id: "usr-staff",
-    username: "staff",
-    password: "staff123",
-    name: "Billing Staff Operator",
-    role: "STAFF",
-    avatar: "💼"
-  },
-  {
-    id: "usr-client",
-    username: "client",
-    password: "client123",
-    name: "Client Read-Only Viewer",
-    role: "VIEWER",
-    avatar: "👁️"
+    id: "usr-developer",
+    username: "developer",
+    password: "dev123",
+    name: "Developer",
+    role: "ADMIN",
+    avatar: "💻"
   }
 ];
 

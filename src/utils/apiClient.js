@@ -3,16 +3,15 @@
 const BASE_URL = '/api';
 
 export const apiClient = {
-  // Fetch 3 Configured Login Members
+  // Fetch 2 Configured Login Members (Admin & Developer)
   getMembers: async () => {
     try {
       const res = await fetch(`${BASE_URL}/auth/members`);
       if (res.ok) return await res.json();
     } catch (e) {}
     return [
-      { id: 'usr-admin-1', username: 'admin1', name: 'Managing Director (MD)', role: 'ADMIN', avatar: '👑' },
-      { id: 'usr-admin-2', username: 'admin2', name: 'Developer (Admin 2)', role: 'ADMIN', avatar: '💻' },
-      { id: 'usr-staff-1', username: 'staff', name: 'Staff (Billing & Accounts)', role: 'STAFF', avatar: '💼' }
+      { id: 'usr-admin', username: 'admin', name: 'Administrator (Admin)', role: 'ADMIN', avatar: '👑' },
+      { id: 'usr-developer', username: 'developer', name: 'Developer', role: 'ADMIN', avatar: '💻' }
     ];
   },
 
@@ -34,13 +33,20 @@ export const apiClient = {
       // Client-side fallback check (for static deployment / offline mode)
       const u = (username || '').toLowerCase().trim();
       const defaultMembers = [
-        { id: 'usr-admin-1', username: 'admin1', name: 'Managing Director (MD)', role: 'ADMIN', avatar: '👑' },
-        { id: 'usr-admin-2', username: 'admin2', name: 'Developer (Admin 2)', role: 'ADMIN', avatar: '💻' },
-        { id: 'usr-staff-1', username: 'staff', name: 'Staff (Billing & Accounts)', role: 'STAFF', avatar: '💼' }
+        { id: 'usr-admin', username: 'admin', name: 'Administrator (Admin)', role: 'ADMIN', avatar: '👑' },
+        { id: 'usr-developer', username: 'developer', name: 'Developer', role: 'ADMIN', avatar: '💻' }
       ];
-      const match = defaultMembers.find(m => m.username === u);
-      if (match && (password === u || password === 'admin' || password === 'admin123' || password === `${u}123`)) {
-        return { success: true, user: match };
+      const match = defaultMembers.find(m => m.username === u || (u === 'admin1' && m.username === 'admin') || ((u === 'admin2' || u === 'dev') && m.username === 'developer'));
+      if (match) {
+        if (match.username === 'admin' && (password === 'admin' || password === 'admin123' || password === 'admin1')) {
+          return { success: true, user: match };
+        }
+        if (match.username === 'developer' && (password === 'developer' || password === 'dev123' || password === 'developer123' || password === 'dev' || password === 'admin2')) {
+          return { success: true, user: match };
+        }
+        if (password === u || password === `${u}123`) {
+          return { success: true, user: match };
+        }
       }
       if (password === 'admin' || password === 'admin123') {
         return { success: true, user: defaultMembers[0] };

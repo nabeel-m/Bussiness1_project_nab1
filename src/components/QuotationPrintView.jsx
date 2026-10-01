@@ -1,5 +1,17 @@
 import React, { useState } from 'react';
-import { Printer, Download, ArrowLeft, Users, Layers, ShieldCheck } from 'lucide-react';
+import { 
+  Printer, 
+  Download, 
+  ArrowLeft, 
+  Users, 
+  Layers, 
+  ShieldCheck, 
+  Eye, 
+  X, 
+  ZoomIn, 
+  ZoomOut, 
+  FileCheck 
+} from 'lucide-react';
 import Logo from './Logo';
 import officialLogoImg from '../assets/logo_new.png';
 import { 
@@ -16,12 +28,16 @@ export default function QuotationPrintView({
   clients = [], 
   transactions = [], 
   customLogoUrl = null,
+  theme = 'night',
   onUploadLogo,
   onRemoveCustomLogo,
   onBackToLedger,
   onSelectClientForPrint 
 }) {
+  const isDay = theme === 'day';
   const [isGeneratingPDF, setIsGeneratingPDF] = useState(false);
+  const [showPreviewModal, setShowPreviewModal] = useState(false);
+  const [previewZoom, setPreviewZoom] = useState(1);
 
   // Safe fallback objects
   const safeQuotation = quotation || {};
@@ -73,13 +89,45 @@ export default function QuotationPrintView({
   const [countryOfSupply, setCountryOfSupply] = useState('India');
   const [masterViewMode, setMasterViewMode] = useState('summary'); // 'summary' | 'detailed'
 
-  // Print directly — all live Tailwind CSS is already loaded so output is 100% identical to screen
+  // Print directly — uses Electron native printer or standard browser print
   const handlePrintCommand = () => {
-    window.print();
+    if (window.electronAPI && typeof window.electronAPI.printDocument === 'function') {
+      window.electronAPI.printDocument();
+    } else {
+      window.print();
+    }
   };
 
-  // Download PDF — html2canvas captures exact rendered pixels from the live DOM (what you see = what you get)
+  // Download PDF — uses native Chromium printToPDF in Electron, or html2canvas + jsPDF with equal 10mm margin
   const handleDownloadPDF = async () => {
+    const clientNameClean = (selectedClient?.name || 'Client').replace(/[^a-zA-Z0-9]/g, '_');
+    const fileName = `Quotation_${refNo.replace(/[^a-zA-Z0-9]/g, '_')}_${clientNameClean}.pdf`;
+
+    // 1. If running in Electron desktop app, use native printToPDF for 100% pixel-perfect vector print
+    if (window.electronAPI && typeof window.electronAPI.printToPDF === 'function') {
+      try {
+        setIsGeneratingPDF(true);
+        const data = await window.electronAPI.printToPDF();
+        if (data && data.length > 0) {
+          const blob = new Blob([data], { type: 'application/pdf' });
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = fileName;
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+          URL.revokeObjectURL(url);
+          return;
+        }
+      } catch (electronErr) {
+        console.warn('Electron printToPDF fallback to html2canvas:', electronErr);
+      } finally {
+        setIsGeneratingPDF(false);
+      }
+    }
+
+    // 2. Web browser html2canvas + jsPDF engine
     const element = document.querySelector('.quotation-sheet-container');
     if (!element) {
       handlePrintCommand();
@@ -95,53 +143,65 @@ export default function QuotationPrintView({
       const jsPDFModule = await import('jspdf');
       const jsPDF = jsPDFModule.jsPDF || jsPDFModule.default;
 
-      // Capture at exact rendered size so colors, fonts & layout are pixel-perfect
+      const pageWidth = 210;  // A4 width in mm
+      const pageHeight = 297; // A4 height in mm
+      const margin = 10;      // Equal 10mm margin on all 4 sides (length & breadth)
+      const contentWidth = pageWidth - margin * 2;   // 190mm
+      const contentHeight = pageHeight - margin * 2; // 277mm
+
+      // Exact 190mm x 277mm aspect ratio canvas (ratio = 277/190 = 1.4578947)
+      const targetWidthPx = 800;
+      const targetHeightPx = Math.round(targetWidthPx * (contentHeight / contentWidth)); // 1166px
+
+      // Capture at exact rendered size with clean background and no box-shadow bleed
       const canvas = await html2canvas(element, {
         scale: 3,
         useCORS: true,
         allowTaint: true,
         backgroundColor: '#ffffff',
-        width: element.offsetWidth,
-        height: element.offsetHeight,
-        scrollX: 0,
-        scrollY: -window.scrollY,
-        logging: false
+        logging: false,
+        onclone: (clonedDoc) => {
+          const clonedElement = clonedDoc.querySelector('.quotation-sheet-container');
+          if (clonedElement) {
+            // Isolate clonedElement in body so no header/offset pushes it down
+            clonedDoc.body.innerHTML = '';
+            clonedDoc.body.style.margin = '0';
+            clonedDoc.body.style.padding = '0';
+            clonedDoc.body.style.background = '#ffffff';
+            clonedDoc.body.appendChild(clonedElement);
+
+            clonedElement.style.boxShadow = 'none';
+            clonedElement.style.position = 'static';
+            clonedElement.style.margin = '0 auto';
+            clonedElement.style.width = `${targetWidthPx}px`;
+            clonedElement.style.maxWidth = `${targetWidthPx}px`;
+            clonedElement.style.minHeight = `${targetHeightPx}px`;
+            clonedElement.style.height = `${targetHeightPx}px`;
+            clonedElement.style.maxHeight = `${targetHeightPx}px`;
+            clonedElement.style.boxSizing = 'border-box';
+            clonedElement.style.display = 'flex';
+            clonedElement.style.flexDirection = 'column';
+            clonedElement.style.justifyContent = 'space-between';
+            clonedElement.style.padding = '20px 24px';
+            clonedElement.style.overflow = 'hidden';
+
+            const innerDiv = clonedElement.querySelector('.relative.z-10');
+            if (innerDiv) {
+              innerDiv.style.minHeight = '0';
+              innerDiv.style.height = '100%';
+              innerDiv.style.flex = '1';
+              innerDiv.style.display = 'flex';
+              innerDiv.style.flexDirection = 'column';
+              innerDiv.style.justifyContent = 'space-between';
+            }
+          }
+        }
       });
 
-      const imgData = canvas.toDataURL('image/png', 1.0);
       const pdf = new jsPDF('p', 'mm', 'a4');
-      const pageWidth = 210;  // A4 width in mm
-      const pageHeight = 297; // A4 height in mm
-      const margin = 10;      // Equal 10mm margin for both horizontal & vertical
-      const contentWidth = pageWidth - margin * 2;
-      const imgHeight = (canvas.height * contentWidth) / canvas.width;
-
-      // If content fits in one page, render as-is with equal vertical & horizontal margin
-      if (imgHeight <= pageHeight - margin * 2) {
-        pdf.addImage(imgData, 'PNG', margin, margin, contentWidth, imgHeight);
-      } else {
-        // Multi-page: slice canvas into A4-height segments
-        const pageContentHeightPx = (pageHeight - margin * 2) * canvas.width / contentWidth;
-        let offsetY = 0;
-        let pageNum = 0;
-        while (offsetY < canvas.height) {
-          if (pageNum > 0) pdf.addPage();
-          const sliceCanvas = document.createElement('canvas');
-          const sliceHeight = Math.min(pageContentHeightPx, canvas.height - offsetY);
-          sliceCanvas.width = canvas.width;
-          sliceCanvas.height = sliceHeight;
-          const ctx = sliceCanvas.getContext('2d');
-          ctx.drawImage(canvas, 0, offsetY, canvas.width, sliceHeight, 0, 0, canvas.width, sliceHeight);
-          const sliceData = sliceCanvas.toDataURL('image/png', 1.0);
-          const sliceImgHeight = (sliceHeight * contentWidth) / canvas.width;
-          pdf.addImage(sliceData, 'PNG', margin, margin, contentWidth, sliceImgHeight);
-          offsetY += pageContentHeightPx;
-          pageNum++;
-        }
-      }
-      
-      const clientNameClean = (selectedClient?.name || 'Client').replace(/[^a-zA-Z0-9]/g, '_');
-      pdf.save(`Quotation_${refNo.replace(/[^a-zA-Z0-9]/g, '_')}_${clientNameClean}.pdf`);
+      const imgData = canvas.toDataURL('image/png', 1.0);
+      pdf.addImage(imgData, 'PNG', margin, margin, contentWidth, contentHeight);
+      pdf.save(fileName);
     } catch (err) {
       console.error('PDF export failed, falling back to print:', err);
       handlePrintCommand();
@@ -154,10 +214,10 @@ export default function QuotationPrintView({
     <div className="max-w-5xl mx-auto px-4 py-4 space-y-4 print:p-0 print:m-0 print:max-w-full print:block">
       
       {/* Top Action Bar (Hidden when printing) */}
-      <div className="bg-slate-900 border border-slate-800 p-3 rounded-2xl flex flex-wrap items-center justify-between gap-4 no-print">
+      <div className={`${isDay ? 'bg-white border-slate-200 shadow-sm' : 'bg-slate-900 border-slate-800'} border p-3 rounded-2xl flex flex-wrap items-center justify-between gap-4 no-print transition-colors`}>
         <button
           onClick={onBackToLedger}
-          className="flex items-center space-x-1.5 text-xs font-semibold text-slate-300 hover:text-white bg-slate-800 hover:bg-slate-700 px-3 py-1.5 rounded-xl transition-all"
+          className={`flex items-center space-x-1.5 text-xs font-semibold ${isDay ? 'text-slate-700 hover:text-slate-900 bg-slate-100 hover:bg-slate-200' : 'text-slate-300 hover:text-white bg-slate-800 hover:bg-slate-700'} px-3 py-1.5 rounded-xl transition-all`}
         >
           <ArrowLeft className="w-4 h-4" />
           <span>Back to Tally Ledger</span>
@@ -165,7 +225,7 @@ export default function QuotationPrintView({
 
         {/* Client / Master Account Selector */}
         <div className="flex items-center space-x-2">
-          <Users className="w-4 h-4 text-amber-400" />
+          <Users className="w-4 h-4 text-amber-500" />
           <select
             value={isAllSitesMode ? 'ALL_SITES' : (selectedClient?.id || '')}
             onChange={(e) => {
@@ -176,12 +236,12 @@ export default function QuotationPrintView({
                 if (target && onSelectClientForPrint) onSelectClientForPrint(target);
               }
             }}
-            className="bg-slate-950 border border-slate-800 rounded-xl px-3 py-1.5 text-xs text-amber-300 font-semibold focus:outline-none focus:border-amber-500"
+            className={`${isDay ? 'bg-slate-50 border-slate-300 text-amber-800 focus:bg-white' : 'bg-slate-950 border-slate-800 text-amber-300'} border rounded-xl px-3 py-1.5 text-xs font-semibold focus:outline-none focus:border-amber-500 transition-colors`}
           >
-            <option value="ALL_SITES" className="font-bold text-amber-400 bg-slate-900">
+            <option value="ALL_SITES" className="font-bold text-amber-500 bg-slate-900">
               🌟 [ADMIN] Master Quotation — All Sites Summary ({allSitesData.totalSites} Sites)
             </option>
-            <optgroup label="── Individual Site Accounts ──" className="text-slate-300 bg-slate-950">
+            <optgroup label="── Individual Site Accounts ──" className={isDay ? "text-slate-700 bg-white" : "text-slate-300 bg-slate-950"}>
               {clients.map(c => (
                 <option key={c.id} value={c.id}>
                   {c.name} ({c.siteLocation})
@@ -193,13 +253,13 @@ export default function QuotationPrintView({
 
         {/* Master View Mode Toggle (Only in All Sites Mode) */}
         {isAllSitesMode && (
-          <div className="flex items-center space-x-1 bg-slate-950 p-1 rounded-xl border border-slate-800">
+          <div className={`flex items-center space-x-1 ${isDay ? 'bg-slate-100 border-slate-200' : 'bg-slate-950 border-slate-800'} p-1 rounded-xl border`}>
             <button
               onClick={() => setMasterViewMode('summary')}
               className={`px-2.5 py-1 text-xs font-semibold rounded-lg transition-all ${
                 masterViewMode === 'summary'
                   ? 'bg-amber-500 text-slate-950 shadow-md'
-                  : 'text-slate-400 hover:text-slate-200'
+                  : isDay ? 'text-slate-600 hover:text-slate-900' : 'text-slate-400 hover:text-slate-200'
               }`}
             >
               📊 Portfolio Overview
@@ -209,7 +269,7 @@ export default function QuotationPrintView({
               className={`px-2.5 py-1 text-xs font-semibold rounded-lg transition-all ${
                 masterViewMode === 'detailed'
                   ? 'bg-amber-500 text-slate-950 shadow-md'
-                  : 'text-slate-400 hover:text-slate-200'
+                  : isDay ? 'text-slate-600 hover:text-slate-900' : 'text-slate-400 hover:text-slate-200'
               }`}
             >
               📑 Detailed Audit
@@ -217,7 +277,17 @@ export default function QuotationPrintView({
           </div>
         )}
 
-        <div className="flex items-center space-x-3">
+        <div className="flex items-center space-x-2.5">
+          {/* Interactive Print Preview Button */}
+          <button
+            onClick={() => setShowPreviewModal(true)}
+            className="bg-indigo-600 hover:bg-indigo-500 text-white font-bold px-3 py-1.5 rounded-xl text-xs flex items-center space-x-1.5 shadow-lg shadow-indigo-600/20 transition-all"
+            title="Open Interactive A4 Print Preview"
+          >
+            <Eye className="w-4 h-4" />
+            <span>Print Preview</span>
+          </button>
+
           {/* Direct PDF Download Button */}
           <button
             onClick={handleDownloadPDF}
@@ -243,13 +313,14 @@ export default function QuotationPrintView({
         On-Screen Quotation Sheet Container - Luxury Architectural Dual-Border Margin Frame with Watermark
       */}
       <div 
-        className="quotation-sheet-container bg-white text-slate-800 p-8 rounded-none font-sans mx-auto relative shadow-2xl overflow-hidden" 
+        className="quotation-sheet-container bg-white text-slate-800 p-6 rounded-none font-sans mx-auto relative shadow-2xl flex flex-col justify-between" 
         style={{ 
           border: '2.5px solid #b45309',
           outline: '1.5px solid #f59e0b',
           outlineOffset: '-6px',
           boxShadow: '0 0 0 6px #fff7ed, 0 20px 45px -10px rgba(0, 0, 0, 0.25)',
-          maxWidth: '860px'
+          maxWidth: '860px',
+          minHeight: '920px'
         }}
       >
         {/* ── 4 Corner Decorative Flourishes / Accents ── */}
@@ -283,356 +354,587 @@ export default function QuotationPrintView({
         </div>
 
         {/* ── Foreground Quotation Content ── */}
-        <div className="relative z-10 space-y-4">
-        
-          {/* ── TOP: Logo centered ── */}
-          <div className="text-center mb-3">
-            <Logo 
-              customLogoUrl={customLogoUrl} 
-              variant="full" 
-              printMode={true} 
-            />
-          </div>
-
-          {/* ── Slogan / Tagline ── */}
-          <div className="text-center mb-6">
-            <p className="text-xs font-medium text-slate-800 tracking-wide">
-              &ldquo;We Craft Your Dream Space into a Colourful Reality. <strong className="font-extrabold text-slate-950">Smart Tech</strong> &ndash; Always with You.&rdquo;
-            </p>
-          </div>
-
-          {/* ── From / To two-column section ── */}
-          <div className="flex justify-between gap-6 mb-3">
-
-          {/* Left: From (Company info + Ref + Mob) */}
-          <div 
-            className="w-1/2 p-4 rounded-xl border text-xs text-slate-700"
-            style={{ backgroundColor: '#fff7ed', borderColor: '#fed7aa' }}
-          >
-            <h3 className="font-bold text-xs tracking-wide mb-1.5" style={{ color: '#d97706' }}>
-              From
-            </h3>
-            <div className="font-bold text-slate-900 text-xs mb-0.5">{safeCompanyInfo.name}</div>
-            <p className="leading-snug text-slate-600 text-[11px] mb-1">{safeCompanyInfo.address}</p>
-            <div className="text-[11px] font-medium text-slate-800">
-              Ref NO : <span className="font-bold">{refNo}</span>
+        <div className="relative z-10 flex flex-col justify-between h-full flex-1">
+          
+          <div>
+            {/* ── TOP: Logo centered ── */}
+            <div className="text-center mb-1.5">
+              <Logo 
+                customLogoUrl={customLogoUrl} 
+                variant="full" 
+                printMode={true} 
+              />
             </div>
-            <div className="text-[11px] font-medium text-slate-800">
-              Mob : <span className="font-bold">{safeCompanyInfo.phones}</span>
-            </div>
-          </div>
 
-          {/* Right: To (Client / All Sites Portfolio info) */}
-          <div 
-            className="w-1/2 p-4 rounded-xl border text-xs text-slate-700"
-            style={{ backgroundColor: '#fff7ed', borderColor: '#fed7aa' }}
-          >
-            <h3 className="font-bold text-xs tracking-wide mb-1.5" style={{ color: '#d97706' }}>
-              {isAllSitesMode ? 'Consolidated Portfolio To' : 'To'}
-            </h3>
-            <div className="font-bold text-slate-900 text-xs mb-0.5">{selectedClient.name}</div>
-            <p className="leading-snug text-slate-600 text-[11px] mb-1">
-              {selectedClient.siteLocation || selectedClient.address || 'Palakkad, Kerala'}
-            </p>
-            {isAllSitesMode ? (
-              <div className="text-[10px] font-bold text-amber-700 mt-1 uppercase tracking-wider">
-                Total Sites Included: {allSitesData.totalSites} Sites Portfolio
+            {/* ── Slogan / Tagline ── */}
+            <div className="text-center mb-2">
+              <p className="text-[11px] font-medium text-slate-800 tracking-wide">
+                &ldquo;We Craft Your Dream Space into a Colourful Reality. <strong className="font-extrabold text-slate-950">Smart Tech</strong> &ndash; Always with You.&rdquo;
+              </p>
+            </div>
+
+            {/* ── From / To two-column section ── */}
+            <div className="flex justify-between gap-4 mb-2">
+
+            {/* Left: From (Company info + Ref + Mob) */}
+            <div 
+              className="w-1/2 p-2.5 px-3.5 rounded-xl border text-[11px] text-slate-700"
+              style={{ backgroundColor: '#fff7ed', borderColor: '#fed7aa' }}
+            >
+              <h3 className="font-bold text-[11px] tracking-wide mb-1" style={{ color: '#d97706' }}>
+                From
+              </h3>
+              <div className="font-bold text-slate-900 text-xs mb-0.5">{safeCompanyInfo.name}</div>
+              <p className="leading-tight text-slate-600 text-[10.5px] mb-1">{safeCompanyInfo.address}</p>
+              <div className="text-[10.5px] font-medium text-slate-800">
+                Ref NO : <span className="font-bold">{refNo}</span>
               </div>
-            ) : (
-              selectedClient.phone && (
-                <div className="text-[11px] font-medium text-slate-800">
-                  Mob : <span className="font-bold">{selectedClient.phone}</span>
-                </div>
-              )
-            )}
-          </div>
-
-        </div>
-
-        {/* ── Date (left) + "Quotation" title (center) row ── */}
-        <div className="flex items-center justify-between mb-3 px-1">
-          <div className="text-xs font-bold text-slate-800">
-            Date : <span className="font-extrabold text-slate-900">{formatDateIndian(quotDate)}</span>
-          </div>
-          <div className="flex-1 text-center">
-            <h2 className="text-xl font-extrabold tracking-tight" style={{ color: '#ea580c' }}>
-              {isAllSitesMode ? 'Master Quotation' : 'Quotation'}
-            </h2>
-            {isAllSitesMode && (
-              <span className="text-[10px] uppercase font-bold text-amber-700 tracking-wider">
-                [ All Sites Consolidated Statement ]
-              </span>
-            )}
-          </div>
-          <div className="w-24 text-right text-[10px] font-bold text-slate-500">
-            {isAllSitesMode ? `${allSitesData.totalSites} Sites` : ''}
-          </div>
-        </div>
-
-        {/* ── MASTER MODE: Executive KPI Cards Strip ── */}
-        {isAllSitesMode && (
-          <div className="grid grid-cols-4 gap-2 mb-3">
-            <div className="p-2 rounded-lg border text-center" style={{ backgroundColor: '#fff7ed', borderColor: '#fed7aa' }}>
-              <div className="text-[9px] uppercase font-bold text-slate-500 tracking-wider">Total Sites</div>
-              <div className="text-sm font-extrabold text-slate-900 mt-0.5">{allSitesData.totalSites} Projects</div>
+              <div className="text-[10.5px] font-medium text-slate-800">
+                Mob : <span className="font-bold">{safeCompanyInfo.phones}</span>
+              </div>
             </div>
-            <div className="p-2 rounded-lg border text-center" style={{ backgroundColor: '#fff7ed', borderColor: '#fed7aa' }}>
-              <div className="text-[9px] uppercase font-bold text-slate-500 tracking-wider">Total Billed (+)</div>
-              <div className="text-xs font-mono font-extrabold text-slate-900 mt-0.5">₹ {formatIndianCurrency(allSitesData.grandTotalDebits)}</div>
-            </div>
-            <div className="p-2 rounded-lg border text-center" style={{ backgroundColor: '#fff7ed', borderColor: '#fed7aa' }}>
-              <div className="text-[9px] uppercase font-bold text-slate-500 tracking-wider">Total Received (-)</div>
-              <div className="text-xs font-mono font-extrabold text-emerald-700 mt-0.5">₹ {formatIndianCurrency(allSitesData.grandTotalCredits)}</div>
-            </div>
-            <div className="p-2 rounded-lg border text-center" style={{ backgroundColor: '#fff7ed', borderColor: '#fed7aa' }}>
-              <div className="text-[9px] uppercase font-bold text-amber-700 tracking-wider">Net Balance Due</div>
-              <div className="text-xs font-mono font-black text-slate-950 mt-0.5">₹ {formatIndianCurrency(allSitesData.grandTotalBalance)}</div>
-            </div>
-          </div>
-        )}
 
-        {/* ── Statement Table ── */}
-        <div className="mb-4 overflow-hidden rounded-lg border border-orange-200/60 shadow-sm">
-          <table className="w-full text-left text-xs border-collapse">
-            <thead>
-              <tr style={{ backgroundColor: '#ea580c', color: '#ffffff' }}>
-                <th className="py-2.5 px-3 font-bold text-xs text-white w-14" style={{ backgroundColor: '#ea580c', color: '#ffffff' }}>
-                  {isAllSitesMode ? 'Sl No' : 'Date'}
-                </th>
-                <th className="py-2.5 px-3 font-bold text-xs text-white" style={{ backgroundColor: '#ea580c', color: '#ffffff' }}>
-                  {isAllSitesMode ? 'Site Project / Client Details' : 'Particulars / Description'}
-                </th>
-                <th className="py-2.5 px-2 font-bold text-xs text-white text-center w-16" style={{ backgroundColor: '#ea580c', color: '#ffffff' }}>Type</th>
-                {isAllSitesMode && (
-                  <th className="py-2.5 px-2 font-bold text-xs text-white text-right w-24" style={{ backgroundColor: '#ea580c', color: '#ffffff' }}>
-                    Opening (₹)
-                  </th>
-                )}
-                <th className="py-2.5 px-3 font-bold text-xs text-white text-right w-24" style={{ backgroundColor: '#ea580c', color: '#ffffff' }}>
-                  {isAllSitesMode ? 'Total Billed (+)' : 'Debit (+)'}
-                </th>
-                <th className="py-2.5 px-3 font-bold text-xs text-white text-right w-24" style={{ backgroundColor: '#ea580c', color: '#ffffff' }}>
-                  {isAllSitesMode ? 'Advance Paid (-)' : 'Credit (-)'}
-                </th>
-                <th className="py-2.5 px-3 font-bold text-xs text-white text-right w-28" style={{ backgroundColor: '#ea580c', color: '#ffffff' }}>
-                  {isAllSitesMode ? 'Site Balance' : 'Balance'}
-                </th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-orange-100">
-              
-              {/* ── ALL SITES MASTER MODE ROWS ── */}
+            {/* Right: To (Client / All Sites Portfolio info) */}
+            <div 
+              className="w-1/2 p-2.5 px-3.5 rounded-xl border text-[11px] text-slate-700"
+              style={{ backgroundColor: '#fff7ed', borderColor: '#fed7aa' }}
+            >
+              <h3 className="font-bold text-[11px] tracking-wide mb-1" style={{ color: '#d97706' }}>
+                {isAllSitesMode ? 'Consolidated Portfolio To' : 'To'}
+              </h3>
+              <div className="font-bold text-slate-900 text-xs mb-0.5">{selectedClient.name}</div>
+              <p className="leading-tight text-slate-600 text-[10.5px] mb-1">
+                {selectedClient.siteLocation || selectedClient.address || 'Palakkad, Kerala'}
+              </p>
               {isAllSitesMode ? (
-                <>
-                  {allSitesData.siteSummaries.map((site, idx) => (
-                    <React.Fragment key={site.id || idx}>
-                      <tr 
-                        style={{ backgroundColor: idx % 2 === 1 ? '#fff7ed' : '#ffffff' }}
-                      >
-                        <td className="py-2.5 px-3 font-mono text-slate-800 text-center text-[11px] font-bold">
-                          {String(site.slNo).padStart(2, '0')}
-                        </td>
-                        <td className="py-2.5 px-3 text-slate-900 font-semibold text-xs leading-snug">
-                          <div className="font-bold text-slate-950">{site.clientName}</div>
-                          <div className="text-[10px] text-slate-500 font-normal">
-                            📍 {site.siteLocation} {site.phone ? `• 📞 ${site.phone}` : ''}
-                          </div>
-                        </td>
-                        <td className="py-2.5 px-2 text-center font-bold text-slate-700 text-[11px]">
-                          SITE
-                        </td>
-                        <td className="py-2.5 px-2 text-right font-mono text-slate-700 text-xs">
-                          {site.openingBalance > 0 ? `₹ ${formatIndianCurrency(site.openingBalance)}` : '-'}
-                        </td>
-                        <td className="py-2.5 px-3 text-right font-mono text-slate-900 text-xs">
-                          ₹ {formatIndianCurrency(site.totalDebits)}
-                        </td>
-                        <td className="py-2.5 px-3 text-right font-mono text-slate-900 text-xs">
-                          {site.totalCredits > 0 ? `₹ ${formatIndianCurrency(site.totalCredits)}` : '-'}
-                        </td>
-                        <td className="py-2.5 px-3 text-right font-mono font-bold text-slate-900 text-xs">
-                          ₹ {formatIndianCurrency(site.netBalance)}
-                        </td>
-                      </tr>
+                <div className="text-[9.5px] font-bold text-amber-700 mt-0.5 uppercase tracking-wider">
+                  Total Sites Included: {allSitesData.totalSites} Sites Portfolio
+                </div>
+              ) : (
+                selectedClient.phone && (
+                  <div className="text-[10.5px] font-medium text-slate-800">
+                    Mob : <span className="font-bold">{selectedClient.phone}</span>
+                  </div>
+                )
+              )}
+            </div>
 
-                      {/* Detailed transaction list under each site if detailed mode is active */}
-                      {masterViewMode === 'detailed' && site.processedTxs && site.processedTxs.length > 0 && (
-                        <tr className="bg-slate-50">
-                          <td colSpan={7} className="px-6 py-2 bg-slate-50/80 border-b border-orange-200/40">
-                            <div className="text-[10px] font-bold text-amber-800 uppercase tracking-wider mb-1">
-                              ↳ Detailed Transactions for {site.clientName}:
-                            </div>
-                            <div className="space-y-0.5 text-[10px] font-mono">
-                              {site.processedTxs.map((tx, tIdx) => (
-                                <div key={tx.id || tIdx} className="flex justify-between items-center text-slate-700 py-0.5 border-b border-slate-200/60 last:border-none">
-                                  <span>{formatDateIndian(tx.date)} — {tx.description} ({tx.type})</span>
-                                  <span className="font-semibold">{tx.type === 'BILL' ? `+ ₹${formatIndianCurrency(tx.amount)}` : `- ₹${formatIndianCurrency(tx.amount)}`}</span>
-                                </div>
-                              ))}
+          </div>
+
+          {/* ── Date (left) + "Quotation" title (center) row ── */}
+          <div className="flex items-center justify-between mb-2 px-1">
+            <div className="text-xs font-bold text-slate-800">
+              Date : <span className="font-extrabold text-slate-900">{formatDateIndian(quotDate)}</span>
+            </div>
+            <div className="flex-1 text-center">
+              <h2 className="text-lg font-extrabold tracking-tight" style={{ color: '#ea580c' }}>
+                {isAllSitesMode ? 'Master Quotation' : 'Quotation'}
+              </h2>
+              {isAllSitesMode && (
+                <span className="text-[9px] uppercase font-bold text-amber-700 tracking-wider">
+                  [ All Sites Consolidated Statement ]
+                </span>
+              )}
+            </div>
+            <div className="w-24 text-right text-[10px] font-bold text-slate-500">
+              {isAllSitesMode ? `${allSitesData.totalSites} Sites` : ''}
+            </div>
+          </div>
+
+          {/* ── MASTER MODE: Executive KPI Cards Strip ── */}
+          {isAllSitesMode && (
+            <div className="grid grid-cols-4 gap-2 mb-2">
+              <div className="p-1.5 rounded-lg border text-center" style={{ backgroundColor: '#fff7ed', borderColor: '#fed7aa' }}>
+                <div className="text-[9px] uppercase font-bold text-slate-500 tracking-wider">Total Sites</div>
+                <div className="text-xs font-extrabold text-slate-900 mt-0.5">{allSitesData.totalSites} Projects</div>
+              </div>
+              <div className="p-1.5 rounded-lg border text-center" style={{ backgroundColor: '#fff7ed', borderColor: '#fed7aa' }}>
+                <div className="text-[9px] uppercase font-bold text-slate-500 tracking-wider">Total Billed (+)</div>
+                <div className="text-[11px] font-mono font-extrabold text-slate-900 mt-0.5 whitespace-nowrap">₹ {formatIndianCurrency(allSitesData.grandTotalDebits)}</div>
+              </div>
+              <div className="p-1.5 rounded-lg border text-center" style={{ backgroundColor: '#fff7ed', borderColor: '#fed7aa' }}>
+                <div className="text-[9px] uppercase font-bold text-slate-500 tracking-wider">Total Received (-)</div>
+                <div className="text-[11px] font-mono font-extrabold text-emerald-700 mt-0.5 whitespace-nowrap">₹ {formatIndianCurrency(allSitesData.grandTotalCredits)}</div>
+              </div>
+              <div className="p-1.5 rounded-lg border text-center" style={{ backgroundColor: '#fff7ed', borderColor: '#fed7aa' }}>
+                <div className="text-[9px] uppercase font-bold text-amber-700 tracking-wider">Net Balance Due</div>
+                <div className="text-[11px] font-mono font-black text-slate-950 mt-0.5 whitespace-nowrap">₹ {formatIndianCurrency(allSitesData.grandTotalBalance)}</div>
+              </div>
+            </div>
+          )}
+
+          {/* ── Statement Table ── */}
+          <div className="mb-2 overflow-hidden rounded-lg border border-orange-200/60 shadow-sm">
+            <table className="w-full text-left text-xs border-collapse">
+              <thead>
+                <tr style={{ backgroundColor: '#ea580c', color: '#ffffff' }}>
+                  <th className="py-1.5 px-2 font-bold text-xs text-white text-center whitespace-nowrap w-24" style={{ backgroundColor: '#ea580c', color: '#ffffff' }}>
+                    {isAllSitesMode ? 'Sl No' : 'Date'}
+                  </th>
+                  <th className="py-1.5 px-2.5 font-bold text-xs text-white" style={{ backgroundColor: '#ea580c', color: '#ffffff' }}>
+                    {isAllSitesMode ? 'Site Project / Client Details' : 'Particulars / Description'}
+                  </th>
+                  <th className="py-1.5 px-2 font-bold text-xs text-white text-center whitespace-nowrap w-16" style={{ backgroundColor: '#ea580c', color: '#ffffff' }}>Type</th>
+                  {isAllSitesMode && (
+                    <th className="py-1.5 px-2.5 font-bold text-xs text-white text-right whitespace-nowrap w-28" style={{ backgroundColor: '#ea580c', color: '#ffffff' }}>
+                      Opening (₹)
+                    </th>
+                  )}
+                  <th className="py-1.5 px-2.5 font-bold text-xs text-white text-right whitespace-nowrap w-28" style={{ backgroundColor: '#ea580c', color: '#ffffff' }}>
+                    {isAllSitesMode ? 'Total Billed (+)' : 'Debit (+)'}
+                  </th>
+                  <th className="py-1.5 px-2.5 font-bold text-xs text-white text-right whitespace-nowrap w-28" style={{ backgroundColor: '#ea580c', color: '#ffffff' }}>
+                    {isAllSitesMode ? 'Advance Paid (-)' : 'Credit (-)'}
+                  </th>
+                  <th className="py-1.5 px-2.5 font-bold text-xs text-white text-right whitespace-nowrap w-32" style={{ backgroundColor: '#ea580c', color: '#ffffff' }}>
+                    {isAllSitesMode ? 'Site Balance' : 'Balance'}
+                  </th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-orange-100">
+                
+                {/* ── ALL SITES MASTER MODE ROWS ── */}
+                {isAllSitesMode ? (
+                  <>
+                    {allSitesData.siteSummaries.map((site, idx) => (
+                      <React.Fragment key={site.id || idx}>
+                        <tr 
+                          style={{ backgroundColor: idx % 2 === 1 ? '#fff7ed' : '#ffffff' }}
+                        >
+                          <td className="py-1.5 px-2 font-mono text-slate-800 text-center text-[11px] font-bold whitespace-nowrap">
+                            {String(site.slNo).padStart(2, '0')}
+                          </td>
+                          <td className="py-1.5 px-2.5 text-slate-900 font-semibold text-xs leading-snug">
+                            <div className="font-bold text-slate-950">{site.clientName}</div>
+                            <div className="text-[10px] text-slate-500 font-normal">
+                              📍 {site.siteLocation} {site.phone ? `• 📞 ${site.phone}` : ''}
                             </div>
                           </td>
+                          <td className="py-1.5 px-2 text-center font-bold text-slate-700 text-[11px] whitespace-nowrap">
+                            SITE
+                          </td>
+                          <td className="py-1.5 px-2.5 text-right font-mono text-slate-700 text-xs whitespace-nowrap">
+                            {site.openingBalance > 0 ? `₹ ${formatIndianCurrency(site.openingBalance)}` : '-'}
+                          </td>
+                          <td className="py-1.5 px-2.5 text-right font-mono text-slate-900 text-xs whitespace-nowrap">
+                            ₹ {formatIndianCurrency(site.totalDebits)}
+                          </td>
+                          <td className="py-1.5 px-2.5 text-right font-mono text-slate-900 text-xs whitespace-nowrap">
+                            {site.totalCredits > 0 ? `₹ ${formatIndianCurrency(site.totalCredits)}` : '-'}
+                          </td>
+                          <td className="py-1.5 px-2.5 text-right font-mono font-bold text-slate-900 text-xs whitespace-nowrap">
+                            ₹ {formatIndianCurrency(site.netBalance)}
+                          </td>
                         </tr>
-                      )}
-                    </React.Fragment>
-                  ))}
 
-                  {/* Subtotal breakdown row */}
-                  <tr className="bg-orange-50/60 font-medium text-[11px]" style={{ backgroundColor: '#fff7ed' }}>
-                    <td colSpan={3} className="py-2 px-3 text-right font-bold text-slate-700 uppercase">
-                      Portfolio Subtotals:
-                    </td>
-                    <td className="py-2 px-2 text-right font-mono font-bold text-slate-800">
-                      ₹ {formatIndianCurrency(allSitesData.grandTotalOpening)}
-                    </td>
-                    <td className="py-2 px-3 text-right font-mono font-bold text-slate-800">
-                      ₹ {formatIndianCurrency(allSitesData.grandTotalDebits)}
-                    </td>
-                    <td className="py-2 px-3 text-right font-mono font-bold text-slate-800">
-                      ₹ {formatIndianCurrency(allSitesData.grandTotalCredits)}
-                    </td>
-                    <td className="py-2 px-3 text-right font-mono font-extrabold text-slate-950">
-                      ₹ {formatIndianCurrency(allSitesData.grandTotalBalance)}
-                    </td>
-                  </tr>
+                        {/* Detailed transaction list under each site if detailed mode is active */}
+                        {masterViewMode === 'detailed' && site.processedTxs && site.processedTxs.length > 0 && (
+                          <tr className="bg-slate-50">
+                            <td colSpan={7} className="px-6 py-2 bg-slate-50/80 border-b border-orange-200/40">
+                              <div className="text-[10px] font-bold text-amber-800 uppercase tracking-wider mb-1">
+                                ↳ Detailed Transactions for {site.clientName}:
+                              </div>
+                              <div className="space-y-0.5 text-[10px] font-mono">
+                                {site.processedTxs.map((tx, tIdx) => (
+                                  <div key={tx.id || tIdx} className="flex justify-between items-center text-slate-700 py-0.5 border-b border-slate-200/60 last:border-none">
+                                    <span>{formatDateIndian(tx.date)} — {tx.description} ({tx.type})</span>
+                                    <span className="font-semibold whitespace-nowrap">{tx.type === 'BILL' ? `+ ₹${formatIndianCurrency(tx.amount)}` : `- ₹${formatIndianCurrency(tx.amount)}`}</span>
+                                  </div>
+                                ))}
+                              </div>
+                            </td>
+                          </tr>
+                        )}
+                      </React.Fragment>
+                    ))}
 
-                  {/* Grand Balance Due Row */}
-                  <tr style={{ backgroundColor: '#fff7ed' }}>
-                    <td colSpan={6} className="py-3 px-3 text-right font-black text-xs text-slate-900 uppercase tracking-wider">
-                      TOTAL BALANCE DUE (ALL SITES COMBINED):
-                    </td>
-                    <td className="py-3 px-3 text-right font-mono font-black text-slate-950 text-sm">
-                      ₹ {formatIndianCurrency(allSitesData.grandTotalBalance)}
-                    </td>
-                  </tr>
-                </>
-              ) : (
-                /* ── SINGLE SITE MODE ROWS ── */
-                <>
-                  {/* Opening Balance Row */}
-                  {selectedClient && selectedClient.openingBalance > 0 && (
-                    <tr style={{ backgroundColor: '#fff7ed' }}>
-                      <td className="py-2.5 px-3 font-mono text-slate-800 text-center text-[11px]">
-                        {formatDateIndian(selectedClient.createdAt || quotDate)}
+                    {/* Subtotal breakdown row */}
+                    <tr className="bg-orange-50/60 font-medium text-[11px]" style={{ backgroundColor: '#fff7ed' }}>
+                      <td colSpan={3} className="py-1.5 px-3 text-right font-bold text-slate-700 uppercase">
+                        Portfolio Subtotals:
                       </td>
-                      <td className="py-2.5 px-3 text-slate-900 font-semibold text-xs">Opening Balance Brought Forward</td>
-                      <td className="py-2.5 px-2 text-center font-bold text-orange-600 text-[11px]">OPENING</td>
-                      <td className="py-2.5 px-3 text-right font-mono text-slate-600 text-xs">-</td>
-                      <td className="py-2.5 px-3 text-right font-mono text-slate-600 text-xs">-</td>
-                      <td className="py-2.5 px-3 text-right font-mono font-bold text-slate-900 text-xs">
-                        ₹ {formatIndianCurrency(selectedClient.openingBalance)}
+                      <td className="py-1.5 px-2.5 text-right font-mono font-bold text-slate-800 whitespace-nowrap">
+                        ₹ {formatIndianCurrency(allSitesData.grandTotalOpening)}
+                      </td>
+                      <td className="py-1.5 px-2.5 text-right font-mono font-bold text-slate-800 whitespace-nowrap">
+                        ₹ {formatIndianCurrency(allSitesData.grandTotalDebits)}
+                      </td>
+                      <td className="py-1.5 px-2.5 text-right font-mono font-bold text-slate-800 whitespace-nowrap">
+                        ₹ {formatIndianCurrency(allSitesData.grandTotalCredits)}
+                      </td>
+                      <td className="py-1.5 px-2.5 text-right font-mono font-extrabold text-slate-950 whitespace-nowrap">
+                        ₹ {formatIndianCurrency(allSitesData.grandTotalBalance)}
                       </td>
                     </tr>
-                  )}
 
-                  {/* Transaction Rows */}
-                  {processedTxs.map((tx, idx) => {
-                    const isDebit = tx.type === 'BILL' || tx.type === 'DEBIT';
-                    return (
-                      <tr 
-                        key={tx.id || idx}
-                        style={{ backgroundColor: idx % 2 === 1 ? '#fff7ed' : '#ffffff' }}
-                      >
-                        <td className="py-2.5 px-3 font-mono text-slate-800 text-center text-[11px]">
-                          {formatDateIndian(tx.date)}
+                    {/* Grand Balance Due Row */}
+                    <tr style={{ backgroundColor: '#fff7ed' }}>
+                      <td colSpan={6} className="py-2 px-3 text-right font-black text-xs text-slate-900 uppercase tracking-wider">
+                        TOTAL BALANCE DUE (ALL SITES COMBINED):
+                      </td>
+                      <td className="py-2 px-3 text-right font-mono font-black text-slate-950 text-sm whitespace-nowrap">
+                        ₹ {formatIndianCurrency(allSitesData.grandTotalBalance)}
+                      </td>
+                    </tr>
+                  </>
+                ) : (
+                  /* ── SINGLE SITE MODE ROWS ── */
+                  <>
+                    {/* Opening Balance Row */}
+                    {selectedClient && selectedClient.openingBalance > 0 && (
+                      <tr style={{ backgroundColor: '#fff7ed' }}>
+                        <td className="py-1.5 px-2 font-mono text-slate-800 text-center text-[11px] whitespace-nowrap">
+                          {formatDateIndian(selectedClient.createdAt || quotDate)}
                         </td>
-                        <td className="py-2.5 px-3 text-slate-900 font-semibold text-xs leading-snug">
-                          {tx.description}
-                        </td>
-                        <td className="py-2.5 px-2 text-center font-bold text-slate-700 text-[11px]">
-                          {tx.type}
-                        </td>
-                        <td className="py-2.5 px-3 text-right font-mono text-slate-900 text-xs">
-                          {isDebit ? `₹ ${formatIndianCurrency(tx.amount)}` : '-'}
-                        </td>
-                        <td className="py-2.5 px-3 text-right font-mono text-slate-900 text-xs">
-                          {!isDebit ? `₹ ${formatIndianCurrency(tx.amount)}` : '-'}
-                        </td>
-                        <td className="py-2.5 px-3 text-right font-mono font-bold text-slate-900 text-xs">
-                          ₹ {formatIndianCurrency(tx.currentRunningBalance)}
+                        <td className="py-1.5 px-2.5 text-slate-900 font-semibold text-xs">Opening Balance Brought Forward</td>
+                        <td className="py-1.5 px-2 text-center font-bold text-orange-600 text-[11px] whitespace-nowrap">OPENING</td>
+                        <td className="py-1.5 px-2.5 text-right font-mono text-slate-600 text-xs whitespace-nowrap">-</td>
+                        <td className="py-1.5 px-2.5 text-right font-mono text-slate-600 text-xs whitespace-nowrap">-</td>
+                        <td className="py-1.5 px-2.5 text-right font-mono font-bold text-slate-900 text-xs whitespace-nowrap">
+                          ₹ {formatIndianCurrency(selectedClient.openingBalance)}
                         </td>
                       </tr>
-                    );
-                  })}
+                    )}
 
-                  {/* Fallback demo row if empty */}
-                  {processedTxs.length === 0 && !selectedClient.openingBalance && (
-                    <tr className="bg-white">
-                      <td className="py-2.5 px-3 font-mono text-slate-800 text-center text-[11px]">{formatDateIndian(quotDate)}</td>
-                      <td className="py-2.5 px-3 text-slate-900 font-semibold text-xs">Basic Interior & Exterior Design Work</td>
-                      <td className="py-2.5 px-2 text-center font-bold text-orange-600 text-[11px]">BILL</td>
-                      <td className="py-2.5 px-3 text-right font-mono text-slate-900 text-xs">₹ 95,950.00</td>
-                      <td className="py-2.5 px-3 text-right font-mono text-slate-600 text-xs">-</td>
-                      <td className="py-2.5 px-3 text-right font-mono font-bold text-slate-900 text-xs">₹ 95,950.00</td>
+                    {/* Transaction Rows */}
+                    {processedTxs.map((tx, idx) => {
+                      const isDebit = tx.type === 'BILL' || tx.type === 'DEBIT';
+                      return (
+                        <tr 
+                          key={tx.id || idx}
+                          style={{ backgroundColor: idx % 2 === 1 ? '#fff7ed' : '#ffffff' }}
+                        >
+                          <td className="py-1.5 px-2 font-mono text-slate-800 text-center text-[11px] whitespace-nowrap">
+                            {formatDateIndian(tx.date)}
+                          </td>
+                          <td className="py-1.5 px-2.5 text-slate-900 font-semibold text-xs leading-snug">
+                            {tx.description}
+                          </td>
+                          <td className="py-1.5 px-2 text-center font-bold text-slate-700 text-[11px] whitespace-nowrap">
+                            {tx.type}
+                          </td>
+                          <td className="py-1.5 px-2.5 text-right font-mono text-slate-900 text-xs whitespace-nowrap">
+                            {isDebit ? `₹ ${formatIndianCurrency(tx.amount)}` : '-'}
+                          </td>
+                          <td className="py-1.5 px-2.5 text-right font-mono text-slate-900 text-xs whitespace-nowrap">
+                            {!isDebit ? `₹ ${formatIndianCurrency(tx.amount)}` : '-'}
+                          </td>
+                          <td className="py-1.5 px-2.5 text-right font-mono font-bold text-slate-900 text-xs whitespace-nowrap">
+                            ₹ {formatIndianCurrency(tx.currentRunningBalance)}
+                          </td>
+                        </tr>
+                      );
+                    })}
+
+                    {/* Fallback demo row if empty */}
+                    {processedTxs.length === 0 && !selectedClient.openingBalance && (
+                      <tr className="bg-white">
+                        <td className="py-1.5 px-2 font-mono text-slate-800 text-center text-[11px] whitespace-nowrap">{formatDateIndian(quotDate)}</td>
+                        <td className="py-1.5 px-2.5 text-slate-900 font-semibold text-xs">Basic Interior & Exterior Design Work</td>
+                        <td className="py-1.5 px-2 text-center font-bold text-orange-600 text-[11px] whitespace-nowrap">BILL</td>
+                        <td className="py-1.5 px-2.5 text-right font-mono text-slate-900 text-xs whitespace-nowrap">₹ 95,950.00</td>
+                        <td className="py-1.5 px-2.5 text-right font-mono text-slate-600 text-xs whitespace-nowrap">-</td>
+                        <td className="py-1.5 px-2.5 text-right font-mono font-bold text-slate-900 text-xs whitespace-nowrap">₹ 95,950.00</td>
+                      </tr>
+                    )}
+
+                    {/* Current Balance Due row */}
+                    <tr style={{ backgroundColor: '#fff7ed' }}>
+                      <td colSpan={5} className="py-2 px-3 text-right font-bold text-xs text-slate-900 uppercase tracking-wide">
+                        CURRENT BALANCE DUE:
+                      </td>
+                      <td className="py-2 px-3 text-right font-mono font-black text-slate-950 text-sm whitespace-nowrap">
+                        ₹ {formatIndianCurrency(netBalance)}
+                      </td>
                     </tr>
-                  )}
+                  </>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
 
-                  {/* Current Balance Due row */}
-                  <tr style={{ backgroundColor: '#fff7ed' }}>
-                    <td colSpan={5} className="py-2.5 px-3 text-right font-bold text-xs text-slate-900 uppercase tracking-wide">
-                      CURRENT BALANCE DUE:
-                    </td>
-                    <td className="py-2.5 px-3 text-right font-mono font-black text-slate-950 text-sm">
-                      ₹ {formatIndianCurrency(netBalance)}
-                    </td>
-                  </tr>
-                </>
+        {/* ── Bottom Section Anchored to Bottom ── */}
+        <div className="pt-2 mt-auto">
+          {/* ── Total in Words & Audit Notes ── */}
+          <div className="flex justify-between items-start text-xs border border-orange-200/80 rounded-lg p-2.5 bg-orange-50/40 mb-2 gap-4">
+            <div className="w-1/2 space-y-0.5">
+              <div className="font-bold text-slate-700 text-[10.5px]">
+                {isAllSitesMode ? 'Portfolio Audit Notes & Status:' : 'Terms & Conditions:'}
+              </div>
+              {isAllSitesMode ? (
+                <p className="text-[9.5px] text-slate-600 leading-snug">
+                  This master quotation consolidates all active project sites across the SMART TECH portfolio. 
+                  Payment collection rate stands at <span className="font-bold text-emerald-700">{allSitesData.collectionRate}%</span> with <span className="font-bold">{allSitesData.totalSites} sites</span> accounted for.
+                </p>
+              ) : (
+                <p className="text-[9.5px] text-slate-600 leading-snug">
+                  Please pay within 15 days from bill date. All constructions and works managed by SMART TECH.
+                </p>
               )}
-            </tbody>
-          </table>
-        </div>
-
-        {/* ── Total in Words & Audit Notes ── */}
-        <div className="flex justify-between items-start text-xs border-t border-orange-200/60 pt-3 mb-4 gap-4">
-          <div className="w-1/2 space-y-1">
-            <div className="font-bold text-slate-700 text-[11px]">
-              {isAllSitesMode ? 'Portfolio Audit Notes & Status:' : 'Terms & Conditions:'}
             </div>
-            {isAllSitesMode ? (
-              <p className="text-[10px] text-slate-600 leading-snug">
-                This master quotation consolidates all active project sites across the SMART TECH portfolio. 
-                Payment collection rate stands at <span className="font-bold text-emerald-700">{allSitesData.collectionRate}%</span> with <span className="font-bold">{allSitesData.totalSites} sites</span> accounted for.
-              </p>
-            ) : (
-              <p className="text-[10px] text-slate-600 leading-snug">
-                Please pay within 15 days from bill date. All constructions and works managed by SMART TECH.
-              </p>
-            )}
-          </div>
 
-          <div className="w-1/2 text-right">
-            <div className="text-[10px] uppercase font-bold text-slate-500 tracking-wider">
-              {isAllSitesMode ? 'CONSOLIDATED TOTAL (IN WORDS):' : 'INVOICE TOTAL (IN WORDS):'}
-            </div>
-            <div className="text-xs font-bold text-slate-900 mt-0.5 leading-tight">
-              {totalInWords}
-            </div>
-          </div>
-        </div>
-
-        {/* ── Footer: Stamp left | Signature right ── */}
-        <div className="flex justify-between items-end pt-2">
-
-          {/* Left: Company stamp */}
-          <div className="text-[11px] text-slate-800">
-            <div className="font-extrabold text-slate-900 text-xs">
-              {safeCompanyInfo.name} ™
-            </div>
-            <div className="italic text-slate-500 text-[10px]">Authorized Signature &amp; Seal</div>
-          </div>
-
-          {/* Right: For SMART TECH with signature line */}
-          <div className="text-right">
-            <div className="h-8"></div>
-            <div className="border-t border-slate-800 pt-1 px-4 inline-block text-xs font-bold text-slate-900">
-              For {safeCompanyInfo.name}
+            <div className="w-1/2 text-right">
+              <div className="text-[9.5px] uppercase font-bold text-slate-500 tracking-wider">
+                {isAllSitesMode ? 'CONSOLIDATED TOTAL (IN WORDS):' : 'INVOICE TOTAL (IN WORDS):'}
+              </div>
+              <div className="text-[11px] font-bold text-slate-900 mt-0.5 leading-tight">
+                {totalInWords}
+              </div>
             </div>
           </div>
 
-        </div>
+          {/* ── Footer: Stamp left | Signature right ── */}
+          <div className="flex justify-between items-end pt-1 pb-1">
+
+            {/* Left: Company stamp */}
+            <div className="text-[11px] text-slate-800">
+              <div className="font-extrabold text-slate-900 text-xs">
+                {safeCompanyInfo.name} ™
+              </div>
+              <div className="italic text-slate-500 text-[9.5px]">Authorized Signature &amp; Seal</div>
+            </div>
+
+            {/* Right: For SMART TECH with signature line */}
+            <div className="text-right">
+              <div className="h-6"></div>
+              <div className="border-t border-slate-800 pt-1 px-4 inline-block text-xs font-bold text-slate-900">
+                For {safeCompanyInfo.name}
+              </div>
+            </div>
+
+          </div>
 
         </div>
 
       </div>
+
+    </div>
+
+      {/* ── Interactive A4 Print Preview Fullscreen Modal ── */}
+      {showPreviewModal && (
+        <div className={`fixed inset-0 z-50 ${isDay ? 'bg-slate-900/60' : 'bg-slate-950/95'} backdrop-blur-lg flex flex-col no-print animate-in fade-in duration-200`}>
+          
+          {/* Preview Navigation & Action Bar */}
+          <div className={`h-16 px-6 ${isDay ? 'bg-white border-b border-slate-200 text-slate-800' : 'bg-slate-900 border-b border-slate-800 text-white'} flex items-center justify-between shrink-0 shadow-2xl transition-colors`}>
+            <div className="flex items-center space-x-3">
+              <div className="p-2 bg-amber-500/10 rounded-xl border border-amber-500/20 text-amber-500 shadow-sm">
+                <FileCheck className="w-5 h-5" />
+              </div>
+              <div>
+                <div className="flex items-center space-x-2">
+                  <h3 className={`text-sm font-bold ${isDay ? 'text-slate-900' : 'text-white'} tracking-wide`}>
+                    SMART TECH Document Print Preview
+                  </h3>
+                  <span className="text-[10px] bg-emerald-500/10 text-emerald-500 border border-emerald-500/30 px-2 py-0.5 rounded-full font-bold">
+                    A4 Ready
+                  </span>
+                </div>
+                <p className={`text-[11px] ${isDay ? 'text-slate-500' : 'text-slate-400'}`}>
+                  Standard A4 (210mm × 297mm) • 300 DPI High-Resolution Layout
+                </p>
+              </div>
+            </div>
+
+            {/* Zoom Controls */}
+            <div className={`flex items-center space-x-2 ${isDay ? 'bg-slate-100 border-slate-200' : 'bg-slate-950 border-slate-800'} px-3 py-1.5 rounded-xl border shadow-inner`}>
+              <button
+                onClick={() => setPreviewZoom(prev => Math.max(0.6, Number((prev - 0.1).toFixed(1))))}
+                className={`p-1 ${isDay ? 'text-slate-600 hover:text-slate-900 hover:bg-slate-200' : 'text-slate-400 hover:text-white hover:bg-slate-800'} rounded transition-all`}
+                title="Zoom Out"
+              >
+                <ZoomOut className="w-4 h-4" />
+              </button>
+              <span className={`text-xs font-mono font-bold ${isDay ? 'text-amber-700' : 'text-amber-400'} min-w-[50px] text-center select-none`}>
+                {Math.round(previewZoom * 100)}%
+              </span>
+              <button
+                onClick={() => setPreviewZoom(prev => Math.min(1.4, Number((prev + 0.1).toFixed(1))))}
+                className={`p-1 ${isDay ? 'text-slate-600 hover:text-slate-900 hover:bg-slate-200' : 'text-slate-400 hover:text-white hover:bg-slate-800'} rounded transition-all`}
+                title="Zoom In"
+              >
+                <ZoomIn className="w-4 h-4" />
+              </button>
+              <button
+                onClick={() => setPreviewZoom(1)}
+                className={`text-[10px] font-semibold ${isDay ? 'text-slate-600 hover:text-amber-700 hover:bg-slate-200' : 'text-slate-400 hover:text-amber-400 hover:bg-slate-800'} px-2 py-0.5 rounded ml-1 transition-all`}
+                title="Reset to 100%"
+              >
+                Fit Page
+              </button>
+            </div>
+
+            {/* Actions */}
+            <div className="flex items-center space-x-3">
+              <button
+                onClick={handleDownloadPDF}
+                disabled={isGeneratingPDF}
+                className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold px-3.5 py-1.5 rounded-xl text-xs flex items-center space-x-1.5 shadow-md shadow-emerald-600/20 transition-all disabled:opacity-50"
+              >
+                <Download className="w-4 h-4" />
+                <span>{isGeneratingPDF ? 'Generating...' : 'Save PDF'}</span>
+              </button>
+
+              <button
+                onClick={() => {
+                  setShowPreviewModal(false);
+                  setTimeout(() => handlePrintCommand(), 150);
+                }}
+                className="bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold px-4 py-1.5 rounded-xl text-xs flex items-center space-x-1.5 shadow-md shadow-amber-500/20 transition-all"
+              >
+                <Printer className="w-4 h-4" />
+                <span>Print Document</span>
+              </button>
+
+              <button
+                onClick={() => setShowPreviewModal(false)}
+                className={`p-1.5 ${isDay ? 'text-slate-500 hover:text-slate-900 hover:bg-slate-100' : 'text-slate-400 hover:text-white hover:bg-slate-800'} rounded-xl transition-all ml-1`}
+                title="Close Print Preview"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+          </div>
+
+          {/* Preview Scrollable Viewport */}
+          <div className={`flex-1 overflow-auto p-8 flex justify-center ${isDay ? 'bg-slate-200/70' : 'bg-slate-950/80'} transition-colors`}>
+            <div 
+              style={{ 
+                transform: `scale(${previewZoom})`, 
+                transformOrigin: 'top center',
+                transition: 'transform 0.15s ease-out'
+              }}
+              className="my-auto drop-shadow-2xl"
+            >
+              {/* Paper Sheet Preview Container */}
+              <div 
+                className="bg-white text-slate-800 p-6 rounded-none font-sans mx-auto relative shadow-2xl flex flex-col justify-between" 
+                style={{ 
+                  border: '2.5px solid #b45309',
+                  outline: '1.5px solid #f59e0b',
+                  outlineOffset: '-6px',
+                  boxShadow: '0 0 0 6px #fff7ed, 0 25px 50px -12px rgba(0, 0, 0, 0.45)',
+                  width: '800px',
+                  minHeight: '1166px'
+                }}
+              >
+                {/* 4 Corner Flourishes */}
+                <div className="absolute top-2 left-2 text-amber-700 font-serif text-sm">✤</div>
+                <div className="absolute top-2 right-2 text-amber-700 font-serif text-sm">✤</div>
+                <div className="absolute bottom-2 left-2 text-amber-700 font-serif text-sm">✤</div>
+                <div className="absolute bottom-2 right-2 text-amber-700 font-serif text-sm">✤</div>
+
+                {/* Watermark Logo */}
+                <div className="absolute inset-0 flex items-center justify-center pointer-events-none select-none z-0">
+                  <img 
+                    src={watermarkLogo} 
+                    alt="" 
+                    className="w-[68%] max-w-[520px] opacity-[0.14] object-contain pointer-events-none"
+                    style={{ filter: 'contrast(130%) brightness(102%)', transform: 'scale(1.08)' }}
+                  />
+                </div>
+
+                {/* Content */}
+                <div className="relative z-10 flex flex-col justify-between h-full flex-1">
+                  <div>
+                  <div className="text-center mb-1.5">
+                    <Logo customLogoUrl={customLogoUrl} variant="full" printMode={true} />
+                  </div>
+                  <div className="text-center mb-2">
+                    <p className="text-[11px] font-medium text-slate-800 tracking-wide">
+                      &ldquo;We Craft Your Dream Space into a Colourful Reality. <strong className="font-extrabold text-slate-950">Smart Tech</strong> &ndash; Always with You.&rdquo;
+                    </p>
+                  </div>
+
+                  {/* Header Details Grid */}
+                  <div className="grid grid-cols-2 gap-4 pb-4 border-b border-amber-600/30">
+                    <div className="text-xs space-y-1">
+                      <div className="font-extrabold text-slate-900 text-sm tracking-wide">
+                        {isAllSitesMode ? 'CONSOLIDATED STATEMENT FOR:' : 'BILLED TO:'}
+                      </div>
+                      <div className="text-sm font-bold text-amber-900">{selectedClient?.name}</div>
+                      <div className="text-slate-600 font-medium">📍 {selectedClient?.siteLocation}</div>
+                      <div className="text-slate-500 text-[11px]">{selectedClient?.address}</div>
+                      {selectedClient?.phone && <div className="text-slate-600">📞 {selectedClient.phone}</div>}
+                    </div>
+
+                    <div className="text-right text-xs space-y-1">
+                      <div className="inline-block bg-amber-50 border border-amber-300/80 px-3 py-1 rounded text-amber-900 font-extrabold text-xs mb-1">
+                        {isAllSitesMode ? 'MASTER PORTFOLIO QUOTATION' : 'OFFICIAL QUOTATION'}
+                      </div>
+                      <div><span className="text-slate-500">Ref No:</span> <strong className="font-mono text-slate-900">{refNo}</strong></div>
+                      <div><span className="text-slate-500">Date:</span> <strong className="text-slate-900">{formatDateIndian(quotDate)}</strong></div>
+                      <div><span className="text-slate-500">Place of Supply:</span> <strong className="text-slate-900">{placeOfSupply}</strong></div>
+                    </div>
+                  </div>
+
+                  {/* Table summary */}
+                  <div className="mt-4">
+                    <table className="w-full text-xs border border-amber-600/30">
+                      <thead className="bg-amber-100/70 text-slate-900 border-b border-amber-600/30">
+                        <tr>
+                          <th className="py-2 px-3 text-left font-extrabold">#</th>
+                          <th className="py-2 px-3 text-left font-extrabold">Description / Work Item</th>
+                          <th className="py-2 px-3 text-right font-extrabold">Amount</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-amber-100">
+                        {isAllSitesMode ? (
+                          allSitesData.siteSummaries.map((s, idx) => (
+                            <tr key={s.id} className={idx % 2 === 0 ? 'bg-white' : 'bg-amber-50/20'}>
+                              <td className="py-2 px-3 text-slate-500">{idx + 1}</td>
+                              <td className="py-2 px-3 font-medium text-slate-900">{s.name} ({s.siteLocation})</td>
+                              <td className="py-2 px-3 text-right font-mono font-bold text-slate-900">{formatIndianCurrency(s.closingBalance)}</td>
+                            </tr>
+                          ))
+                        ) : (
+                          processedTxs.length > 0 ? (
+                            processedTxs.map((t, idx) => (
+                              <tr key={t.id} className={idx % 2 === 0 ? 'bg-white' : 'bg-amber-50/20'}>
+                                <td className="py-2 px-3 text-slate-500">{idx + 1}</td>
+                                <td className="py-2 px-3 text-slate-900 font-medium">{t.description || (t.type === 'BILL' ? 'Project Service / Material Billing' : 'Payment Received')}</td>
+                                <td className="py-2 px-3 text-right font-mono font-bold text-slate-900">{formatIndianCurrency(t.amount)}</td>
+                              </tr>
+                            ))
+                          ) : (
+                            <tr>
+                              <td className="py-2 px-3 text-slate-500">1</td>
+                              <td className="py-2 px-3 text-slate-900 font-medium">Opening Balance & Account Settlement</td>
+                              <td className="py-2 px-3 text-right font-mono font-bold text-slate-900">{formatIndianCurrency(netBalance)}</td>
+                            </tr>
+                          )
+                        )}
+                      </tbody>
+                      <tfoot className="bg-amber-100/50 border-t-2 border-amber-600/40 font-extrabold">
+                        <tr>
+                          <td colSpan="2" className="py-2.5 px-3 text-right uppercase text-slate-900">Total Net Balance Payable:</td>
+                          <td className="py-2.5 px-3 text-right font-mono text-sm text-amber-900">{formatIndianCurrency(netBalance)}</td>
+                        </tr>
+                      </tfoot>
+                    </table>
+                  </div>
+                </div>
+
+                  {/* Words & Signature */}
+                  <div className="pt-6 mt-auto pb-2 border-t border-slate-200 flex justify-between items-start text-xs">
+                    <div className="max-w-[60%]">
+                      <div className="text-[10px] uppercase font-bold text-slate-500">Amount in Words:</div>
+                      <div className="font-bold text-slate-900">{totalInWords}</div>
+                    </div>
+                    <div className="text-right">
+                      <div className="h-10"></div>
+                      <div className="border-t border-slate-700 pt-1 font-bold text-xs text-slate-900">
+                        Authorized Signatory • SMART TECH
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+        </div>
+      )}
     </div>
   );
 }

@@ -1,11 +1,17 @@
 import Database from 'better-sqlite3';
 import path from 'path';
+import fs from 'fs';
 import { fileURLToPath } from 'url';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const dbPath = path.join(__dirname, 'smarttech_database.sqlite');
+const dbPath = process.env.SMARTTECH_DB_PATH || path.join(__dirname, 'smarttech_database.sqlite');
+const dbDir = path.dirname(dbPath);
+if (!fs.existsSync(dbDir)) {
+  fs.mkdirSync(dbDir, { recursive: true });
+}
+
 const db = new Database(dbPath);
 
 // Enable WAL mode for high performance
@@ -108,12 +114,16 @@ export function initDb() {
     console.warn('Migration note on users table:', err.message);
   }
 
-  // Seed or update the 3 Google SSO Access Slots
+  // Seed or update the 2 Google SSO Access Slots (Only Admin & Developer)
   const defaultSlots = [
-    { id: 'slot-admin-1', slotName: 'Admin 1: Managing Director (MD)', email: 'smartechpalakkad@gmail.com', role: 'ADMIN', defaultName: 'Managing Director (MD)', avatar: '👑' },
-    { id: 'slot-admin-2', slotName: 'Admin 2: Developer', email: 'nabeel.softcode@gmail.com', role: 'ADMIN', defaultName: 'Developer (Admin 2)', avatar: '💻' },
-    { id: 'slot-staff-1', slotName: 'Staff: Billing & Accounts', email: '', role: 'STAFF', defaultName: 'Staff (Billing & Accounts)', avatar: '💼' }
+    { id: 'slot-admin', slotName: 'Admin: Managing Director', email: 'smartechpalakkad@gmail.com', role: 'ADMIN', defaultName: 'Managing Director (Admin)', avatar: '👑' },
+    { id: 'slot-developer', slotName: 'Developer: Software Engineer', email: 'nabeel.softcode@gmail.com', role: 'ADMIN', defaultName: 'Developer', avatar: '💻' }
   ];
+
+  // Clean up legacy SSO slots if any
+  try {
+    db.prepare("DELETE FROM sso_access_slots WHERE id NOT IN ('slot-admin', 'slot-developer')").run();
+  } catch (e) {}
 
   for (const s of defaultSlots) {
     const existing = db.prepare('SELECT * FROM sso_access_slots WHERE id = ?').get(s.id);
@@ -126,16 +136,15 @@ export function initDb() {
       db.prepare(`
         UPDATE sso_access_slots 
         SET slotName = ?, role = ?, defaultName = ?, avatar = ?,
-            email = CASE WHEN (email IS NULL OR email = '' OR email LIKE '%director%' OR id = 'slot-admin-1') AND ? != '' THEN ? ELSE email END
+            email = CASE WHEN (email IS NULL OR email = '' OR id = 'slot-admin') AND ? != '' THEN ? ELSE email END
         WHERE id = ?
       `).run(s.slotName, s.role, s.defaultName, s.avatar, s.email, s.email, s.id);
     }
   }
 
-  // Ensure Admin 1 email is explicitly set to smartechpalakkad@gmail.com
+  // Ensure Admin email is explicitly set
   try {
-    db.prepare("UPDATE sso_access_slots SET email = 'smartechpalakkad@gmail.com' WHERE id = 'slot-admin-1'").run();
-    db.prepare("UPDATE users SET email = 'smartechpalakkad@gmail.com' WHERE username = 'admin1' OR id = 'usr-admin-1'").run();
+    db.prepare("UPDATE sso_access_slots SET email = 'smartechpalakkad@gmail.com' WHERE id = 'slot-admin'").run();
   } catch (e) {}
 
   // Seed default company info
@@ -153,26 +162,30 @@ export function initDb() {
     db.prepare("INSERT INTO system_settings (key, value) VALUES ('system_password', 'admin123')").run();
   }
 
-  // Seed or sync the 3 configured login members
+  // Seed or sync strictly two login users: Admin and Developer ONLY
   const memberSpecs = [
-    { id: 'usr-admin-1', username: 'admin1', name: 'Managing Director (MD)', role: 'ADMIN', avatar: '👑', defaultPass: 'admin1' },
-    { id: 'usr-admin-2', username: 'admin2', name: 'Developer (Admin 2)', role: 'ADMIN', avatar: '💻', defaultPass: 'admin2' },
-    { id: 'usr-staff-1', username: 'staff', name: 'Staff (Billing & Accounts)', role: 'STAFF', avatar: '💼', defaultPass: 'staff' }
+    { id: 'usr-admin', username: 'admin', name: 'Administrator (Admin)', role: 'ADMIN', avatar: '👑', defaultPass: 'admin123', email: 'smartechpalakkad@gmail.com' },
+    { id: 'usr-developer', username: 'developer', name: 'Developer', role: 'ADMIN', avatar: '💻', defaultPass: 'dev123', email: 'nabeel.softcode@gmail.com' }
   ];
+
+  // Purge any non-admin and non-developer accounts so database contains ONLY these two users
+  try {
+    db.prepare("DELETE FROM users WHERE LOWER(username) NOT IN ('admin', 'developer')").run();
+  } catch (e) {}
 
   for (const spec of memberSpecs) {
     const existing = db.prepare('SELECT * FROM users WHERE LOWER(username) = LOWER(?)').get(spec.username);
     if (!existing) {
-      db.prepare('INSERT INTO users (id, username, password, name, role, avatar) VALUES (?, ?, ?, ?, ?, ?)')
-        .run(spec.id, spec.username, spec.defaultPass, spec.name, spec.role, spec.avatar);
+      db.prepare('INSERT INTO users (id, username, password, name, role, avatar, email) VALUES (?, ?, ?, ?, ?, ?, ?)')
+        .run(spec.id, spec.username, spec.defaultPass, spec.name, spec.role, spec.avatar, spec.email);
     } else {
-      // Update name, role, avatar if changed, and set password if empty
+      // Update name, role, avatar, email and reset legacy hash or empty passwords to default password
       db.prepare(`
         UPDATE users 
-        SET name = ?, role = ?, avatar = ?,
-            password = CASE WHEN password IS NULL OR password = '' THEN ? ELSE password END
+        SET name = ?, role = ?, avatar = ?, email = ?,
+            password = CASE WHEN password IS NULL OR password = '' OR password LIKE '%:%' THEN ? ELSE password END
         WHERE LOWER(username) = LOWER(?)
-      `).run(spec.name, spec.role, spec.avatar, spec.defaultPass, spec.username);
+      `).run(spec.name, spec.role, spec.avatar, spec.email, spec.defaultPass, spec.username);
     }
   }
 

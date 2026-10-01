@@ -1,6 +1,12 @@
 import express from 'express';
 import cors from 'cors';
+import path from 'path';
+import fs from 'fs';
+import { fileURLToPath } from 'url';
 import db, { initDb } from './database.js';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -13,30 +19,27 @@ app.use(express.json({ limit: '10mb' }));
 initDb();
 
 // -------------------------------------------------------------
-// 3 Members Authentication Endpoints
-// 1. admin1: Managing Director (MD)
-// 2. admin2: Developer (Admin 2)
-// 3. staff: Staff (Billing & Accounts)
+// 2 Users Authentication Endpoints (Admin and Developer ONLY)
+// 1. admin: Administrator (Admin)
+// 2. developer: Developer
 // -------------------------------------------------------------
 
-// Fetch configured members for login selection
+// Fetch configured members for login selection (Admin & Developer)
 app.get('/api/auth/members', (req, res) => {
   try {
-    const members = db.prepare('SELECT id, username, name, role, avatar FROM users WHERE username IN (?, ?, ?)')
-                      .all('admin1', 'admin2', 'staff');
+    const members = db.prepare('SELECT id, username, name, role, avatar FROM users WHERE username IN (?, ?)')
+                      .all('admin', 'developer');
     if (members && members.length > 0) {
       return res.json(members);
     }
     return res.json([
-      { id: 'usr-admin-1', username: 'admin1', name: 'Managing Director (MD)', role: 'ADMIN', avatar: '👑' },
-      { id: 'usr-admin-2', username: 'admin2', name: 'Developer (Admin 2)', role: 'ADMIN', avatar: '💻' },
-      { id: 'usr-staff-1', username: 'staff', name: 'Staff (Billing & Accounts)', role: 'STAFF', avatar: '💼' }
+      { id: 'usr-admin', username: 'admin', name: 'Administrator (Admin)', role: 'ADMIN', avatar: '👑' },
+      { id: 'usr-developer', username: 'developer', name: 'Developer', role: 'ADMIN', avatar: '💻' }
     ]);
   } catch (err) {
     return res.json([
-      { id: 'usr-admin-1', username: 'admin1', name: 'Managing Director (MD)', role: 'ADMIN', avatar: '👑' },
-      { id: 'usr-admin-2', username: 'admin2', name: 'Developer (Admin 2)', role: 'ADMIN', avatar: '💻' },
-      { id: 'usr-staff-1', username: 'staff', name: 'Staff (Billing & Accounts)', role: 'STAFF', avatar: '💼' }
+      { id: 'usr-admin', username: 'admin', name: 'Administrator (Admin)', role: 'ADMIN', avatar: '👑' },
+      { id: 'usr-developer', username: 'developer', name: 'Developer', role: 'ADMIN', avatar: '💻' }
     ]);
   }
 });
@@ -49,11 +52,16 @@ app.post('/api/auth/login', (req, res) => {
 
   const targetUsername = (username || '').trim().toLowerCase();
 
-  // Fetch user by username if provided
+  // Fetch user by username if provided (supporting alias fallback: admin1 -> admin, admin2/dev -> developer)
   let user = null;
   if (targetUsername) {
-    user = db.prepare('SELECT id, username, password, name, role, avatar FROM users WHERE LOWER(username) = ?')
-             .get(targetUsername);
+    user = db.prepare(`
+      SELECT id, username, password, name, role, avatar 
+      FROM users 
+      WHERE LOWER(username) = ? 
+         OR (LOWER(username) = 'admin' AND ? = 'admin1')
+         OR (LOWER(username) = 'developer' AND ? IN ('admin2', 'dev'))
+    `).get(targetUsername, targetUsername, targetUsername);
   }
 
   // System master password check
@@ -68,9 +76,8 @@ app.post('/api/auth/login', (req, res) => {
 
   if (user) {
     const isUserPassMatch = (password === user.password) || 
-                            (targetUsername === 'admin1' && password === 'admin1') ||
-                            (targetUsername === 'admin2' && password === 'admin2') ||
-                            (targetUsername === 'staff' && password === 'staff');
+                            (user.username === 'admin' && (password === 'admin123' || password === 'admin' || password === 'admin1')) ||
+                            (user.username === 'developer' && (password === 'dev123' || password === 'developer' || password === 'developer123' || password === 'dev' || password === 'admin2'));
 
     if (isUserPassMatch || isMasterMatch) {
       const { password: _, ...userSafe } = user;
@@ -80,12 +87,12 @@ app.post('/api/auth/login', (req, res) => {
     }
   }
 
-  // If no username provided or not found, try matching against any of the 3 members or master password
+  // If no username provided or not found, try matching against admin or master password
   if (isMasterMatch) {
-    const defaultAdmin = db.prepare("SELECT id, username, name, role, avatar FROM users WHERE username = 'admin1'").get() || {
-      id: 'usr-admin-1',
-      username: 'admin1',
-      name: 'Managing Director (MD)',
+    const defaultAdmin = db.prepare("SELECT id, username, name, role, avatar FROM users WHERE username = 'admin'").get() || {
+      id: 'usr-admin',
+      username: 'admin',
+      name: 'Administrator (Admin)',
       role: 'ADMIN',
       avatar: '👑'
     };
@@ -108,14 +115,19 @@ app.post('/api/auth/change-member-password', (req, res) => {
     return res.status(400).json({ error: 'New password cannot be empty' });
   }
 
-  const targetUsername = (username || 'admin1').trim().toLowerCase();
-  const user = db.prepare('SELECT * FROM users WHERE LOWER(username) = ?').get(targetUsername);
+  const targetUsername = (username || 'admin').trim().toLowerCase();
+  const user = db.prepare(`
+    SELECT * FROM users 
+    WHERE LOWER(username) = ? 
+       OR (LOWER(username) = 'admin' AND ? = 'admin1')
+       OR (LOWER(username) = 'developer' AND ? IN ('admin2', 'dev'))
+  `).get(targetUsername, targetUsername, targetUsername);
 
   if (!user) {
     return res.status(404).json({ error: 'Member not found' });
   }
 
-  if (currentPassword && currentPassword !== user.password && currentPassword !== targetUsername && currentPassword !== 'admin123' && currentPassword !== 'admin') {
+  if (currentPassword && currentPassword !== user.password && currentPassword !== targetUsername && currentPassword !== 'admin123' && currentPassword !== 'admin' && currentPassword !== 'dev123') {
     return res.status(401).json({ error: 'Current password is incorrect' });
   }
 
@@ -491,7 +503,17 @@ app.post('/api/reset', (req, res) => {
   res.json({ success: true, message: 'Database reset to clean demo data' });
 });
 
+// Serve static client build if dist folder exists (for desktop & production mode)
+const distPath = process.env.CLIENT_DIST_PATH || path.join(__dirname, '../dist');
+if (fs.existsSync(distPath)) {
+  app.use(express.static(distPath));
+  app.use((req, res, next) => {
+    if (req.path.startsWith('/api')) return next();
+    res.sendFile(path.join(distPath, 'index.html'));
+  });
+}
+
 // Start Express Server
-app.listen(PORT, () => {
-  console.log(`🚀 SMART TECH Backend REST API running on http://localhost:${PORT}`);
+app.listen(PORT, '0.0.0.0', () => {
+  console.log(`🚀 SMART TECH Backend REST API running on http://127.0.0.1:${PORT}`);
 });

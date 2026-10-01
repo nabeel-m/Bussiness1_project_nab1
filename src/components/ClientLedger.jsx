@@ -23,6 +23,7 @@ export default function ClientLedger({
   transactions,
   quotations,
   authUser,
+  theme = 'night',
   onSelectClientForQuotation,
   onAddClient,
   onUpdateClient,
@@ -30,6 +31,7 @@ export default function ClientLedger({
   onAddTransaction,
   onDeleteTransaction
 }) {
+  const isDay = theme === 'day';
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedClientId, setSelectedClientId] = useState(clients[0]?.id || null);
   const [showAddClientModal, setShowAddClientModal] = useState(false);
@@ -145,13 +147,13 @@ export default function ClientLedger({
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
       
       {/* Top Banner & Stats */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-slate-900 border border-slate-800 p-5 rounded-2xl">
+      <div className={`flex flex-col md:flex-row md:items-center justify-between gap-4 ${isDay ? 'bg-white border-slate-200 shadow-sm' : 'bg-slate-900 border-slate-800'} border p-5 rounded-2xl transition-colors`}>
         <div>
-          <h1 className="text-xl font-bold text-white flex items-center gap-2">
-            <Wallet className="w-5 h-5 text-amber-400" />
+          <h1 className={`text-xl font-bold ${isDay ? 'text-slate-900' : 'text-white'} flex items-center gap-2`}>
+            <Wallet className="w-5 h-5 text-amber-500" />
             Tally-Style Client Accounts Ledger
           </h1>
-          <p className="text-xs text-slate-400 mt-1">
+          <p className={`text-xs ${isDay ? 'text-slate-500' : 'text-slate-400'} mt-1`}>
             Manage client balances, site bills, advance payments & quotation history (Auto-sorted by date)
           </p>
         </div>
@@ -180,28 +182,28 @@ export default function ClientLedger({
 
       {/* Global Ledger Metrics Bar */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <div className="bg-slate-900 border border-slate-800 p-4 rounded-2xl">
-          <span className="text-xs text-slate-400 font-medium">Total Client Accounts</span>
-          <div className="text-2xl font-bold text-white mt-1">{clients.length} Sites Active</div>
+        <div className={`${isDay ? 'bg-white border-slate-200 shadow-sm' : 'bg-slate-900 border-slate-800'} border p-4 rounded-2xl transition-colors`}>
+          <span className={`text-xs ${isDay ? 'text-slate-500' : 'text-slate-400'} font-medium`}>Total Client Accounts</span>
+          <div className={`text-2xl font-bold ${isDay ? 'text-slate-900' : 'text-white'} mt-1`}>{clients.length} Sites Active</div>
         </div>
 
         <div 
           onClick={() => onSelectClientForQuotation({ id: 'ALL_SITES' })}
-          className="bg-slate-900 border border-slate-800 hover:border-amber-500/40 p-4 rounded-2xl cursor-pointer transition-all group"
+          className={`${isDay ? 'bg-white border-slate-200 hover:border-amber-500/60 shadow-sm' : 'bg-slate-900 border-slate-800 hover:border-amber-500/40'} border p-4 rounded-2xl cursor-pointer transition-all group`}
           title="Click to view Master All-Sites Statement"
         >
           <div className="flex items-center justify-between">
-            <span className="text-xs text-slate-400 font-medium group-hover:text-amber-400 transition-colors">Total Balance Receivable</span>
-            <span className="text-[10px] text-amber-400 bg-amber-400/10 px-2 py-0.5 rounded-md font-bold">All Sites</span>
+            <span className={`text-xs ${isDay ? 'text-slate-500' : 'text-slate-400'} font-medium group-hover:text-amber-500 transition-colors`}>Total Balance Receivable</span>
+            <span className="text-[10px] text-amber-600 bg-amber-500/10 px-2 py-0.5 rounded-md font-bold">All Sites</span>
           </div>
-          <div className="text-2xl font-bold text-amber-400 font-mono mt-1">
+          <div className="text-2xl font-bold text-amber-500 font-mono mt-1">
             {formatIndianCurrency(totalBalanceDueAllClients, true)}
           </div>
         </div>
 
-        <div className="bg-slate-900 border border-slate-800 p-4 rounded-2xl">
-          <span className="text-xs text-slate-400 font-medium">Active Account Selected</span>
-          <div className="text-sm font-bold text-slate-200 mt-1 truncate">
+        <div className={`${isDay ? 'bg-white border-slate-200 shadow-sm' : 'bg-slate-900 border-slate-800'} border p-4 rounded-2xl transition-colors`}>
+          <span className={`text-xs ${isDay ? 'text-slate-500' : 'text-slate-400'} font-medium`}>Active Account Selected</span>
+          <div className={`text-sm font-bold ${isDay ? 'text-slate-800' : 'text-slate-200'} mt-1 truncate`}>
             {selectedClient?.name || 'None'}
           </div>
         </div>
@@ -211,15 +213,15 @@ export default function ClientLedger({
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         
         {/* Left Sidebar: Client Accounts Search & List */}
-        <div className="lg:col-span-4 bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-4">
+        <div className={`lg:col-span-4 ${isDay ? 'bg-white border-slate-200 shadow-sm' : 'bg-slate-900 border-slate-800'} border rounded-2xl p-4 space-y-4 transition-colors`}>
           <div className="relative">
-            <Search className="w-4 h-4 absolute left-3 top-3 text-slate-500" />
+            <Search className={`w-4 h-4 absolute left-3 top-3 ${isDay ? 'text-slate-400' : 'text-slate-500'}`} />
             <input
               type="text"
               placeholder="Search clients or site locations..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full bg-slate-950 border border-slate-800 rounded-xl pl-9 pr-3 py-2 text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-amber-500"
+              className={`w-full ${isDay ? 'bg-slate-50 border-slate-200 text-slate-800 placeholder-slate-400 focus:bg-white focus:border-amber-500' : 'bg-slate-950 border-slate-800 text-slate-200 placeholder-slate-500 focus:border-amber-500'} border rounded-xl pl-9 pr-3 py-2 text-xs focus:outline-none transition-colors`}
             />
           </div>
 
@@ -234,28 +236,36 @@ export default function ClientLedger({
                   onClick={() => setSelectedClientId(client.id)}
                   className={`p-3.5 rounded-xl border transition-all cursor-pointer ${
                     isSelected
-                      ? 'bg-slate-800 border-amber-500/50 shadow-lg shadow-amber-500/5'
-                      : 'bg-slate-950/60 border-slate-800/80 hover:bg-slate-850 hover:border-slate-700'
+                      ? isDay
+                        ? 'bg-amber-50/80 border-amber-400/80 shadow-sm'
+                        : 'bg-slate-800 border-amber-500/50 shadow-lg shadow-amber-500/5'
+                      : isDay
+                        ? 'bg-slate-50/70 border-slate-200/80 hover:bg-slate-100 hover:border-slate-300'
+                        : 'bg-slate-950/60 border-slate-800/80 hover:bg-slate-850 hover:border-slate-700'
                   }`}
                 >
                   <div className="flex items-start justify-between">
                     <div>
-                      <h3 className={`text-sm font-bold ${isSelected ? 'text-amber-400' : 'text-slate-200'}`}>
+                      <h3 className={`text-sm font-bold ${
+                        isSelected 
+                          ? isDay ? 'text-amber-800' : 'text-amber-400' 
+                          : isDay ? 'text-slate-800' : 'text-slate-200'
+                      }`}>
                         {client.name}
                       </h3>
-                      <p className="text-xs text-slate-400 flex items-center gap-1 mt-0.5">
+                      <p className={`text-xs ${isDay ? 'text-slate-500' : 'text-slate-400'} flex items-center gap-1 mt-0.5`}>
                         <MapPin className="w-3 h-3 text-amber-500 shrink-0" />
                         <span className="truncate">{client.siteLocation || client.address || 'Palakkad'}</span>
                       </p>
                     </div>
                     {isSelected && (
-                      <span className="w-2 h-2 rounded-full bg-amber-400 shrink-0 mt-1" />
+                      <span className="w-2 h-2 rounded-full bg-amber-500 shrink-0 mt-1" />
                     )}
                   </div>
 
-                  <div className="flex items-center justify-between mt-3 pt-2 border-t border-slate-800/60 text-xs">
-                    <span className="text-slate-500">Balance Due:</span>
-                    <span className="font-mono font-bold text-slate-200">
+                  <div className={`flex items-center justify-between mt-3 pt-2 border-t ${isDay ? 'border-slate-200' : 'border-slate-800/60'} text-xs`}>
+                    <span className={isDay ? 'text-slate-500' : 'text-slate-500'}>Balance Due:</span>
+                    <span className={`font-mono font-bold ${isDay ? 'text-slate-900' : 'text-slate-200'}`}>
                       {formatIndianCurrency(netBalance, true)}
                     </span>
                   </div>
@@ -264,7 +274,7 @@ export default function ClientLedger({
             })}
 
             {filteredClients.length === 0 && (
-              <div className="text-center py-8 text-xs text-slate-500">
+              <div className={`text-center py-8 text-xs ${isDay ? 'text-slate-400' : 'text-slate-500'}`}>
                 No matching client accounts found.
               </div>
             )}
@@ -276,27 +286,27 @@ export default function ClientLedger({
           <div className="lg:col-span-8 space-y-6">
             
             {/* Selected Client Card Header */}
-            <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 relative overflow-hidden">
+            <div className={`${isDay ? 'bg-white border-slate-200 shadow-sm' : 'bg-slate-900 border-slate-800'} border rounded-2xl p-5 relative overflow-hidden transition-colors`}>
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 relative z-10">
                 <div>
                   <div className="flex items-center space-x-2">
-                    <h2 className="text-xl font-bold text-white font-heading">
+                    <h2 className={`text-xl font-bold ${isDay ? 'text-slate-900' : 'text-white'} font-heading`}>
                       {selectedClient.name}
                     </h2>
-                    <span className="text-xs bg-amber-500/10 border border-amber-500/20 text-amber-400 font-semibold px-2 py-0.5 rounded-full">
+                    <span className="text-xs bg-amber-500/10 border border-amber-500/20 text-amber-500 font-semibold px-2 py-0.5 rounded-full">
                       Active Account
                     </span>
                     {canEdit && (
                       <button
                         onClick={openEditClientModal}
-                        className="p-1 text-slate-400 hover:text-amber-400 hover:bg-slate-800 rounded transition-colors"
+                        className={`p-1 ${isDay ? 'text-slate-400 hover:text-amber-600 hover:bg-slate-100' : 'text-slate-400 hover:text-amber-400 hover:bg-slate-800'} rounded transition-colors`}
                         title="Edit Client Info / Opening Balance"
                       >
                         <Edit2 className="w-4 h-4" />
                       </button>
                     )}
                   </div>
-                  <div className="flex flex-wrap items-center gap-4 text-xs text-slate-400 mt-2">
+                  <div className={`flex flex-wrap items-center gap-4 text-xs ${isDay ? 'text-slate-500' : 'text-slate-400'} mt-2`}>
                     <span className="flex items-center gap-1">
                       <MapPin className="w-3.5 h-3.5 text-amber-500" />
                       {selectedClient.siteLocation || selectedClient.address || 'Palakkad'}
@@ -312,9 +322,9 @@ export default function ClientLedger({
 
                 {/* Balance Pill & Actions */}
                 <div className="flex flex-col items-end gap-2">
-                  <div className="bg-slate-950 px-4 py-2 rounded-xl border border-amber-500/30 text-right">
-                    <span className="text-[10px] uppercase text-slate-400 font-semibold tracking-wider">Current Balance Due</span>
-                    <div className="text-lg font-mono font-bold text-amber-400">
+                  <div className={`${isDay ? 'bg-amber-50/70 border-amber-300/80' : 'bg-slate-950 border-amber-500/30'} px-4 py-2 rounded-xl border text-right transition-colors`}>
+                    <span className={`text-[10px] uppercase ${isDay ? 'text-amber-800' : 'text-slate-400'} font-semibold tracking-wider`}>Current Balance Due</span>
+                    <div className={`text-lg font-mono font-bold ${isDay ? 'text-amber-700' : 'text-amber-400'}`}>
                       {formatIndianCurrency(currentClientNetBalance, true)}
                     </div>
                   </div>
@@ -331,7 +341,7 @@ export default function ClientLedger({
                           });
                           setShowAddTxModal(true);
                         }}
-                        className="bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold px-3 py-1.5 rounded-lg flex items-center gap-1 transition-all shadow-md shadow-emerald-600/20"
+                        className="bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold px-3 py-1.5 rounded-lg flex items-center gap-1 transition-all shadow-md shadow-emerald-600/20 active:scale-95"
                       >
                         <Plus className="w-3.5 h-3.5" />
                         Record Payment / Bill
@@ -339,7 +349,7 @@ export default function ClientLedger({
                     )}
                     <button
                       onClick={() => onSelectClientForQuotation(selectedClient)}
-                      className="bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-bold px-3 py-1.5 rounded-lg flex items-center gap-1 transition-all shadow-md shadow-amber-500/20"
+                      className="bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-bold px-3 py-1.5 rounded-lg flex items-center gap-1 transition-all shadow-md shadow-amber-500/20 active:scale-95"
                     >
                       <FileText className="w-3.5 h-3.5" />
                       Create Quotation
@@ -350,25 +360,25 @@ export default function ClientLedger({
             </div>
 
             {/* Ledger Transactions Table */}
-            <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 space-y-4">
+            <div className={`${isDay ? 'bg-white border-slate-200 shadow-sm' : 'bg-slate-900 border-slate-800'} border rounded-2xl p-5 space-y-4 transition-colors`}>
               <div className="flex items-center justify-between">
                 <div>
-                  <h3 className="text-base font-bold text-white flex items-center gap-2">
-                    <Calendar className="w-4 h-4 text-amber-400" />
+                  <h3 className={`text-base font-bold ${isDay ? 'text-slate-900' : 'text-white'} flex items-center gap-2`}>
+                    <Calendar className="w-4 h-4 text-amber-500" />
                     Chronological Statement & Running Ledger
                   </h3>
-                  <p className="text-[11px] text-slate-400 mt-0.5">
+                  <p className={`text-[11px] ${isDay ? 'text-slate-500' : 'text-slate-400'} mt-0.5`}>
                     Automatically ordered chronologically by Date (oldest to newest)
                   </p>
                 </div>
-                <span className="text-xs text-slate-400">
+                <span className={`text-xs ${isDay ? 'text-slate-500' : 'text-slate-400'}`}>
                   {processedTxs.length} Transactions
                 </span>
               </div>
 
-              <div className="overflow-x-auto border border-slate-800 rounded-xl">
+              <div className={`overflow-x-auto border ${isDay ? 'border-slate-200' : 'border-slate-800'} rounded-xl`}>
                 <table className="w-full text-left text-sm">
-                  <thead className="bg-slate-950 text-slate-400 text-xs uppercase font-semibold">
+                  <thead className={`${isDay ? 'bg-slate-100 text-slate-700' : 'bg-slate-950 text-slate-400'} text-xs uppercase font-semibold transition-colors`}>
                     <tr>
                       <th className="px-4 py-3">Date</th>
                       <th className="px-4 py-3">Particulars / Description</th>
@@ -379,53 +389,53 @@ export default function ClientLedger({
                       {isAdmin && <th className="px-2 py-3 text-center w-10">Action</th>}
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-slate-800 text-slate-300">
+                  <tbody className={`divide-y ${isDay ? 'divide-slate-100 text-slate-700' : 'divide-slate-800 text-slate-300'}`}>
                     {/* Opening Balance Row */}
-                    <tr className="bg-slate-950/60 text-xs">
-                      <td className="px-4 py-2.5 font-mono text-slate-400">
+                    <tr className={`${isDay ? 'bg-slate-50/70 text-slate-600' : 'bg-slate-950/60 text-slate-400'} text-xs transition-colors`}>
+                      <td className={`px-4 py-2.5 font-mono ${isDay ? 'text-slate-500' : 'text-slate-400'}`}>
                         {formatDateIndian(selectedClient.createdAt || '2026-06-01')}
                       </td>
-                      <td className="px-4 py-2.5 font-semibold text-slate-200">
+                      <td className={`px-4 py-2.5 font-semibold ${isDay ? 'text-slate-800' : 'text-slate-200'}`}>
                         Opening Balance Brought Forward
                       </td>
-                      <td className="px-4 py-2.5 text-slate-400 font-bold text-[10px]">OPENING</td>
-                      <td className="px-4 py-2.5 text-right font-mono text-slate-400">-</td>
-                      <td className="px-4 py-2.5 text-right font-mono text-slate-400">-</td>
-                      <td className="px-4 py-2.5 text-right font-mono font-bold text-amber-300">
+                      <td className={`px-4 py-2.5 ${isDay ? 'text-slate-500' : 'text-slate-400'} font-bold text-[10px]`}>OPENING</td>
+                      <td className={`px-4 py-2.5 text-right font-mono ${isDay ? 'text-slate-400' : 'text-slate-400'}`}>-</td>
+                      <td className={`px-4 py-2.5 text-right font-mono ${isDay ? 'text-slate-400' : 'text-slate-400'}`}>-</td>
+                      <td className={`px-4 py-2.5 text-right font-mono font-bold ${isDay ? 'text-amber-700' : 'text-amber-300'}`}>
                         {formatIndianCurrency(selectedClient.openingBalance)}
                       </td>
-                      {isAdmin && <td className="px-2 py-2.5 text-center text-slate-600">-</td>}
+                      {isAdmin && <td className="px-2 py-2.5 text-center text-slate-400">-</td>}
                     </tr>
 
                     {processedTxs.map((tx) => {
                       const isDebit = tx.type === 'BILL' || tx.type === 'DEBIT';
                       return (
-                        <tr key={tx.id} className="hover:bg-slate-850/50 transition-colors text-xs">
-                          <td className="px-4 py-3 font-mono text-slate-400">{formatDateIndian(tx.date)}</td>
-                          <td className="px-4 py-3 font-medium text-slate-200">{tx.description}</td>
+                        <tr key={tx.id} className={`${isDay ? 'hover:bg-slate-50' : 'hover:bg-slate-850/50'} transition-colors text-xs`}>
+                          <td className={`px-4 py-3 font-mono ${isDay ? 'text-slate-500' : 'text-slate-400'}`}>{formatDateIndian(tx.date)}</td>
+                          <td className={`px-4 py-3 font-medium ${isDay ? 'text-slate-800' : 'text-slate-200'}`}>{tx.description}</td>
                           <td className="px-4 py-3">
                             <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
                               isDebit 
-                                ? 'bg-amber-500/10 text-amber-400 border border-amber-500/20' 
-                                : 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
+                                ? isDay ? 'bg-amber-100 text-amber-800 border border-amber-300' : 'bg-amber-500/10 text-amber-400 border border-amber-500/20'
+                                : isDay ? 'bg-emerald-100 text-emerald-800 border border-emerald-300' : 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
                             }`}>
                               {tx.type}
                             </span>
                           </td>
-                          <td className="px-4 py-3 text-right font-mono text-amber-400 font-medium">
+                          <td className={`px-4 py-3 text-right font-mono ${isDay ? 'text-amber-700' : 'text-amber-400'} font-medium`}>
                             {isDebit ? formatIndianCurrency(tx.amount) : '-'}
                           </td>
-                          <td className="px-4 py-3 text-right font-mono text-emerald-400 font-medium">
+                          <td className={`px-4 py-3 text-right font-mono ${isDay ? 'text-emerald-700' : 'text-emerald-400'} font-medium`}>
                             {!isDebit ? formatIndianCurrency(tx.amount) : '-'}
                           </td>
-                          <td className="px-4 py-3 text-right font-mono font-bold text-slate-100">
+                          <td className={`px-4 py-3 text-right font-mono font-bold ${isDay ? 'text-slate-900' : 'text-slate-100'}`}>
                             {formatIndianCurrency(tx.currentRunningBalance)}
                           </td>
                           {isAdmin && (
                             <td className="px-2 py-3 text-center">
                               <button
                                 onClick={() => onDeleteTransaction(tx.id)}
-                                className="p-1 text-slate-500 hover:text-red-400 hover:bg-red-950/40 rounded transition-colors"
+                                className={`p-1 ${isDay ? 'text-slate-400 hover:text-red-600 hover:bg-red-50' : 'text-slate-500 hover:text-red-400 hover:bg-red-950/40'} rounded transition-colors`}
                                 title="Delete Transaction"
                               >
                                 <Trash2 className="w-3.5 h-3.5" />
@@ -438,18 +448,18 @@ export default function ClientLedger({
 
                     {processedTxs.length === 0 && (
                       <tr>
-                        <td colSpan={isAdmin ? 7 : 6} className="text-center py-6 text-xs text-slate-500">
+                        <td colSpan={isAdmin ? 7 : 6} className={`text-center py-6 text-xs ${isDay ? 'text-slate-400' : 'text-slate-500'}`}>
                           No transactions recorded yet for this client account.
                         </td>
                       </tr>
                     )}
                   </tbody>
-                  <tfoot className="bg-slate-950 font-bold text-xs text-slate-200">
+                  <tfoot className={`${isDay ? 'bg-slate-100 text-slate-800' : 'bg-slate-950 text-slate-200'} font-bold text-xs transition-colors`}>
                     <tr>
                       <td colSpan="5" className="px-4 py-3 text-right">
                         FINAL BALANCE DUE:
                       </td>
-                      <td className="px-4 py-3 text-right font-mono text-sm text-amber-400 font-extrabold">
+                      <td className={`px-4 py-3 text-right font-mono text-sm ${isDay ? 'text-amber-700' : 'text-amber-400'} font-extrabold`}>
                         {formatIndianCurrency(currentClientNetBalance, true)}
                       </td>
                       {isAdmin && <td></td>}
@@ -468,7 +478,7 @@ export default function ClientLedger({
                       onDeleteClient(selectedClient.id);
                     }
                   }}
-                  className="text-xs text-red-400 hover:text-red-300 hover:bg-red-950/40 px-3 py-1.5 rounded-lg flex items-center gap-1 transition-all border border-red-500/20"
+                  className={`text-xs ${isDay ? 'text-red-600 hover:text-red-700 hover:bg-red-50 border-red-200' : 'text-red-400 hover:text-red-300 hover:bg-red-950/40 border-red-500/20'} px-3 py-1.5 rounded-lg flex items-center gap-1 transition-all border`}
                 >
                   <Trash2 className="w-3.5 h-3.5" />
                   Delete Client Account
@@ -478,7 +488,7 @@ export default function ClientLedger({
 
           </div>
         ) : (
-          <div className="lg:col-span-8 bg-slate-900 border border-slate-800 rounded-2xl p-12 text-center text-slate-400">
+          <div className={`lg:col-span-8 ${isDay ? 'bg-white border-slate-200 shadow-sm text-slate-500' : 'bg-slate-900 border-slate-800 text-slate-400'} border rounded-2xl p-12 text-center`}>
             Select a client account from the left list to view statement ledger.
           </div>
         )}
@@ -486,74 +496,74 @@ export default function ClientLedger({
 
       {/* Add Client Modal */}
       {showAddClientModal && (
-        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-md p-6 space-y-4 shadow-2xl">
-            <h3 className="text-lg font-bold text-white flex items-center gap-2">
-              <Users className="w-5 h-5 text-amber-400" />
+        <div className={`fixed inset-0 z-50 ${isDay ? 'bg-slate-900/50' : 'bg-black/70'} backdrop-blur-sm flex items-center justify-center p-4`}>
+          <div className={`${isDay ? 'bg-white border-slate-200 text-slate-800' : 'bg-slate-900 border-slate-800 text-white'} border rounded-2xl w-full max-w-md p-6 space-y-4 shadow-2xl transition-colors`}>
+            <h3 className={`text-lg font-bold ${isDay ? 'text-slate-900' : 'text-white'} flex items-center gap-2`}>
+              <Users className="w-5 h-5 text-amber-500" />
               Add New Client Account
             </h3>
             <form onSubmit={handleCreateClientSubmit} className="space-y-3">
               <div>
-                <label className="block text-xs text-slate-400 mb-1 font-semibold">Client Name *</label>
+                <label className={`block text-xs ${isDay ? 'text-slate-600' : 'text-slate-400'} mb-1 font-semibold`}>Client Name *</label>
                 <input
                   type="text"
                   required
                   placeholder="e.g. Kallekad Block Site Project"
                   value={newClient.name}
                   onChange={(e) => setNewClient({ ...newClient, name: e.target.value })}
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-200 focus:border-amber-500 focus:outline-none"
+                  className={`w-full ${isDay ? 'bg-slate-50 border-slate-300 text-slate-900 placeholder-slate-400 focus:bg-white' : 'bg-slate-950 border-slate-800 text-slate-200 placeholder-slate-500'} border rounded-xl px-3 py-2 text-xs focus:border-amber-500 focus:outline-none`}
                 />
               </div>
 
               <div>
-                <label className="block text-xs text-slate-400 mb-1 font-semibold">Phone Number</label>
+                <label className={`block text-xs ${isDay ? 'text-slate-600' : 'text-slate-400'} mb-1 font-semibold`}>Phone Number</label>
                 <input
                   type="text"
                   placeholder="+91 9995984554"
                   value={newClient.phone}
                   onChange={(e) => setNewClient({ ...newClient, phone: e.target.value })}
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-200 focus:border-amber-500 focus:outline-none"
+                  className={`w-full ${isDay ? 'bg-slate-50 border-slate-300 text-slate-900 placeholder-slate-400 focus:bg-white' : 'bg-slate-950 border-slate-800 text-slate-200 placeholder-slate-500'} border rounded-xl px-3 py-2 text-xs focus:border-amber-500 focus:outline-none`}
                 />
               </div>
 
               <div>
-                <label className="block text-xs text-slate-400 mb-1 font-semibold">Site Location</label>
+                <label className={`block text-xs ${isDay ? 'text-slate-600' : 'text-slate-400'} mb-1 font-semibold`}>Site Location</label>
                 <input
                   type="text"
                   placeholder="e.g. Kallekad Block Site"
                   value={newClient.siteLocation}
                   onChange={(e) => setNewClient({ ...newClient, siteLocation: e.target.value })}
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-200 focus:border-amber-500 focus:outline-none"
+                  className={`w-full ${isDay ? 'bg-slate-50 border-slate-300 text-slate-900 placeholder-slate-400 focus:bg-white' : 'bg-slate-950 border-slate-800 text-slate-200 placeholder-slate-500'} border rounded-xl px-3 py-2 text-xs focus:border-amber-500 focus:outline-none`}
                 />
               </div>
 
               <div>
-                <label className="block text-xs text-slate-400 mb-1 font-semibold">Full Address</label>
+                <label className={`block text-xs ${isDay ? 'text-slate-600' : 'text-slate-400'} mb-1 font-semibold`}>Full Address</label>
                 <input
                   type="text"
                   placeholder="e.g. Palakkad, Kerala"
                   value={newClient.address}
                   onChange={(e) => setNewClient({ ...newClient, address: e.target.value })}
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-200 focus:border-amber-500 focus:outline-none"
+                  className={`w-full ${isDay ? 'bg-slate-50 border-slate-300 text-slate-900 placeholder-slate-400 focus:bg-white' : 'bg-slate-950 border-slate-800 text-slate-200 placeholder-slate-500'} border rounded-xl px-3 py-2 text-xs focus:border-amber-500 focus:outline-none`}
                 />
               </div>
 
               <div>
-                <label className="block text-xs text-slate-400 mb-1 font-semibold">Opening Balance (₹)</label>
+                <label className={`block text-xs ${isDay ? 'text-slate-600' : 'text-slate-400'} mb-1 font-semibold`}>Opening Balance (₹)</label>
                 <input
                   type="number"
                   placeholder="e.g. 1258382"
                   value={newClient.openingBalance}
                   onChange={(e) => setNewClient({ ...newClient, openingBalance: e.target.value })}
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-200 focus:border-amber-500 focus:outline-none"
+                  className={`w-full ${isDay ? 'bg-slate-50 border-slate-300 text-slate-900 placeholder-slate-400 focus:bg-white' : 'bg-slate-950 border-slate-800 text-slate-200 placeholder-slate-500'} border rounded-xl px-3 py-2 text-xs focus:border-amber-500 focus:outline-none`}
                 />
               </div>
 
-              <div className="flex justify-end gap-2 pt-3 border-t border-slate-800">
+              <div className={`flex justify-end gap-2 pt-3 border-t ${isDay ? 'border-slate-200' : 'border-slate-800'}`}>
                 <button
                   type="button"
                   onClick={() => setShowAddClientModal(false)}
-                  className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-xs font-semibold"
+                  className={`px-4 py-2 ${isDay ? 'bg-slate-100 hover:bg-slate-200 text-slate-700' : 'bg-slate-800 hover:bg-slate-700 text-slate-300'} rounded-xl text-xs font-semibold`}
                 >
                   Cancel
                 </button>
@@ -571,69 +581,69 @@ export default function ClientLedger({
 
       {/* Edit Client Modal */}
       {showEditClientModal && editClientData && (
-        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-md p-6 space-y-4 shadow-2xl">
-            <h3 className="text-lg font-bold text-white flex items-center gap-2">
-              <Edit2 className="w-5 h-5 text-amber-400" />
+        <div className={`fixed inset-0 z-50 ${isDay ? 'bg-slate-900/50' : 'bg-black/70'} backdrop-blur-sm flex items-center justify-center p-4`}>
+          <div className={`${isDay ? 'bg-white border-slate-200 text-slate-800' : 'bg-slate-900 border-slate-800 text-white'} border rounded-2xl w-full max-w-md p-6 space-y-4 shadow-2xl transition-colors`}>
+            <h3 className={`text-lg font-bold ${isDay ? 'text-slate-900' : 'text-white'} flex items-center gap-2`}>
+              <Edit2 className="w-5 h-5 text-amber-500" />
               Edit Client Account Info
             </h3>
             <form onSubmit={handleEditClientSubmit} className="space-y-3">
               <div>
-                <label className="block text-xs text-slate-400 mb-1 font-semibold">Client Name *</label>
+                <label className={`block text-xs ${isDay ? 'text-slate-600' : 'text-slate-400'} mb-1 font-semibold`}>Client Name *</label>
                 <input
                   type="text"
                   required
                   value={editClientData.name}
                   onChange={(e) => setEditClientData({ ...editClientData, name: e.target.value })}
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-200 focus:border-amber-500 focus:outline-none"
+                  className={`w-full ${isDay ? 'bg-slate-50 border-slate-300 text-slate-900 placeholder-slate-400 focus:bg-white' : 'bg-slate-950 border-slate-800 text-slate-200 placeholder-slate-500'} border rounded-xl px-3 py-2 text-xs focus:border-amber-500 focus:outline-none`}
                 />
               </div>
 
               <div>
-                <label className="block text-xs text-slate-400 mb-1 font-semibold">Phone Number</label>
+                <label className={`block text-xs ${isDay ? 'text-slate-600' : 'text-slate-400'} mb-1 font-semibold`}>Phone Number</label>
                 <input
                   type="text"
                   value={editClientData.phone}
                   onChange={(e) => setEditClientData({ ...editClientData, phone: e.target.value })}
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-200 focus:border-amber-500 focus:outline-none"
+                  className={`w-full ${isDay ? 'bg-slate-50 border-slate-300 text-slate-900 placeholder-slate-400 focus:bg-white' : 'bg-slate-950 border-slate-800 text-slate-200 placeholder-slate-500'} border rounded-xl px-3 py-2 text-xs focus:border-amber-500 focus:outline-none`}
                 />
               </div>
 
               <div>
-                <label className="block text-xs text-slate-400 mb-1 font-semibold">Site Location</label>
+                <label className={`block text-xs ${isDay ? 'text-slate-600' : 'text-slate-400'} mb-1 font-semibold`}>Site Location</label>
                 <input
                   type="text"
                   value={editClientData.siteLocation}
                   onChange={(e) => setEditClientData({ ...editClientData, siteLocation: e.target.value })}
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-200 focus:border-amber-500 focus:outline-none"
+                  className={`w-full ${isDay ? 'bg-slate-50 border-slate-300 text-slate-900 placeholder-slate-400 focus:bg-white' : 'bg-slate-950 border-slate-800 text-slate-200 placeholder-slate-500'} border rounded-xl px-3 py-2 text-xs focus:border-amber-500 focus:outline-none`}
                 />
               </div>
 
               <div>
-                <label className="block text-xs text-slate-400 mb-1 font-semibold">Full Address</label>
+                <label className={`block text-xs ${isDay ? 'text-slate-600' : 'text-slate-400'} mb-1 font-semibold`}>Full Address</label>
                 <input
                   type="text"
                   value={editClientData.address}
                   onChange={(e) => setEditClientData({ ...editClientData, address: e.target.value })}
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-200 focus:border-amber-500 focus:outline-none"
+                  className={`w-full ${isDay ? 'bg-slate-50 border-slate-300 text-slate-900 placeholder-slate-400 focus:bg-white' : 'bg-slate-950 border-slate-800 text-slate-200 placeholder-slate-500'} border rounded-xl px-3 py-2 text-xs focus:border-amber-500 focus:outline-none`}
                 />
               </div>
 
               <div>
-                <label className="block text-xs text-slate-400 mb-1 font-semibold">Opening Balance (₹)</label>
+                <label className={`block text-xs ${isDay ? 'text-slate-600' : 'text-slate-400'} mb-1 font-semibold`}>Opening Balance (₹)</label>
                 <input
                   type="number"
                   value={editClientData.openingBalance}
                   onChange={(e) => setEditClientData({ ...editClientData, openingBalance: e.target.value })}
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-200 focus:border-amber-500 focus:outline-none"
+                  className={`w-full ${isDay ? 'bg-slate-50 border-slate-300 text-slate-900 placeholder-slate-400 focus:bg-white' : 'bg-slate-950 border-slate-800 text-slate-200 placeholder-slate-500'} border rounded-xl px-3 py-2 text-xs focus:border-amber-500 focus:outline-none`}
                 />
               </div>
 
-              <div className="flex justify-end gap-2 pt-3 border-t border-slate-800">
+              <div className={`flex justify-end gap-2 pt-3 border-t ${isDay ? 'border-slate-200' : 'border-slate-800'}`}>
                 <button
                   type="button"
                   onClick={() => setShowEditClientModal(false)}
-                  className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-xs font-semibold"
+                  className={`px-4 py-2 ${isDay ? 'bg-slate-100 hover:bg-slate-200 text-slate-700' : 'bg-slate-800 hover:bg-slate-700 text-slate-300'} rounded-xl text-xs font-semibold`}
                 >
                   Cancel
                 </button>
@@ -651,15 +661,15 @@ export default function ClientLedger({
 
       {/* Record Transaction Modal */}
       {showAddTxModal && (
-        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-md p-6 space-y-4 shadow-2xl">
-            <h3 className="text-lg font-bold text-white flex items-center gap-2">
-              <Plus className="w-5 h-5 text-emerald-400" />
+        <div className={`fixed inset-0 z-50 ${isDay ? 'bg-slate-900/50' : 'bg-black/70'} backdrop-blur-sm flex items-center justify-center p-4`}>
+          <div className={`${isDay ? 'bg-white border-slate-200 text-slate-800' : 'bg-slate-900 border-slate-800 text-white'} border rounded-2xl w-full max-w-md p-6 space-y-4 shadow-2xl transition-colors`}>
+            <h3 className={`text-lg font-bold ${isDay ? 'text-slate-900' : 'text-white'} flex items-center gap-2`}>
+              <Plus className="w-5 h-5 text-emerald-500" />
               Record Transaction for {selectedClient?.name}
             </h3>
             <form onSubmit={handleCreateTxSubmit} className="space-y-3">
               <div>
-                <label className="block text-xs text-slate-400 mb-1 font-semibold">Transaction Date</label>
+                <label className={`block text-xs ${isDay ? 'text-slate-600' : 'text-slate-400'} mb-1 font-semibold`}>Transaction Date</label>
                 <div className="grid grid-cols-3 gap-2">
                   {/* Day */}
                   <select
@@ -669,7 +679,7 @@ export default function ClientLedger({
                       const parts = (newTx.date || new Date().toISOString().split('T')[0]).split('-');
                       setNewTx({ ...newTx, date: `${parts[0]}-${parts[1]}-${e.target.value}` });
                     }}
-                    className="bg-slate-950 border border-slate-800 rounded-xl px-2 py-2 text-xs text-slate-200 focus:border-amber-500 focus:outline-none font-mono"
+                    className={`${isDay ? 'bg-slate-50 border-slate-300 text-slate-900 focus:bg-white' : 'bg-slate-950 border-slate-800 text-slate-200'} border rounded-xl px-2 py-2 text-xs focus:border-amber-500 focus:outline-none font-mono`}
                   >
                     <option value="">Day</option>
                     {Array.from({ length: 31 }, (_, i) => {
@@ -686,7 +696,7 @@ export default function ClientLedger({
                       const parts = (newTx.date || new Date().toISOString().split('T')[0]).split('-');
                       setNewTx({ ...newTx, date: `${parts[0]}-${e.target.value}-${parts[2]}` });
                     }}
-                    className="bg-slate-950 border border-slate-800 rounded-xl px-2 py-2 text-xs text-slate-200 focus:border-amber-500 focus:outline-none"
+                    className={`${isDay ? 'bg-slate-50 border-slate-300 text-slate-900 focus:bg-white' : 'bg-slate-950 border-slate-800 text-slate-200'} border rounded-xl px-2 py-2 text-xs focus:border-amber-500 focus:outline-none`}
                   >
                     <option value="">Month</option>
                     {[
@@ -706,7 +716,7 @@ export default function ClientLedger({
                       const parts = (newTx.date || new Date().toISOString().split('T')[0]).split('-');
                       setNewTx({ ...newTx, date: `${e.target.value}-${parts[1]}-${parts[2]}` });
                     }}
-                    className="bg-slate-950 border border-slate-800 rounded-xl px-2 py-2 text-xs text-slate-200 focus:border-amber-500 focus:outline-none font-mono"
+                    className={`${isDay ? 'bg-slate-50 border-slate-300 text-slate-900 focus:bg-white' : 'bg-slate-950 border-slate-800 text-slate-200'} border rounded-xl px-2 py-2 text-xs focus:border-amber-500 focus:outline-none font-mono`}
                   >
                     <option value="">Year</option>
                     {Array.from({ length: 10 }, (_, i) => {
@@ -718,7 +728,7 @@ export default function ClientLedger({
               </div>
 
               <div>
-                <label className="block text-xs text-slate-400 mb-1 font-semibold">Transaction Type</label>
+                <label className={`block text-xs ${isDay ? 'text-slate-600' : 'text-slate-400'} mb-1 font-semibold`}>Transaction Type</label>
                 <div className="grid grid-cols-2 gap-2">
                   <button
                     type="button"
@@ -726,7 +736,9 @@ export default function ClientLedger({
                     className={`py-2 px-3 rounded-xl text-xs font-bold border transition-all ${
                       newTx.type === 'BILL'
                         ? 'bg-amber-500 text-slate-950 border-amber-400 shadow-md shadow-amber-500/20'
-                        : 'bg-slate-950 text-slate-400 border-slate-800 hover:bg-slate-800'
+                        : isDay
+                          ? 'bg-slate-100 text-slate-600 border-slate-200 hover:bg-slate-200'
+                          : 'bg-slate-950 text-slate-400 border-slate-800 hover:bg-slate-800'
                     }`}
                   >
                     BILL / DEBIT (+)
@@ -737,7 +749,9 @@ export default function ClientLedger({
                     className={`py-2 px-3 rounded-xl text-xs font-bold border transition-all ${
                       newTx.type === 'PAYMENT'
                         ? 'bg-emerald-500 text-slate-950 border-emerald-400 shadow-md shadow-emerald-500/20'
-                        : 'bg-slate-950 text-slate-400 border-slate-800 hover:bg-slate-800'
+                        : isDay
+                          ? 'bg-slate-100 text-slate-600 border-slate-200 hover:bg-slate-200'
+                          : 'bg-slate-950 text-slate-400 border-slate-800 hover:bg-slate-800'
                     }`}
                   >
                     PAYMENT / CREDIT (-)
@@ -746,18 +760,18 @@ export default function ClientLedger({
               </div>
 
               <div>
-                <label className="block text-xs text-slate-400 mb-1 font-semibold">Description / Particulars</label>
+                <label className={`block text-xs ${isDay ? 'text-slate-600' : 'text-slate-400'} mb-1 font-semibold`}>Description / Particulars</label>
                 <input
                   type="text"
                   placeholder={newTx.type === 'BILL' ? 'e.g. 2nd & 3rd Bill Amount' : 'e.g. Advance Paid Deduction / Bank Credit'}
                   value={newTx.description}
                   onChange={(e) => setNewTx({ ...newTx, description: e.target.value })}
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-200 focus:border-amber-500 focus:outline-none"
+                  className={`w-full ${isDay ? 'bg-slate-50 border-slate-300 text-slate-900 placeholder-slate-400 focus:bg-white' : 'bg-slate-950 border-slate-800 text-slate-200 placeholder-slate-500'} border rounded-xl px-3 py-2 text-xs focus:border-amber-500 focus:outline-none`}
                 />
               </div>
 
               <div>
-                <label className="block text-xs text-slate-400 mb-1 font-semibold">Amount (₹) *</label>
+                <label className={`block text-xs ${isDay ? 'text-slate-600' : 'text-slate-400'} mb-1 font-semibold`}>Amount (₹) *</label>
                 <input
                   type="number"
                   required
@@ -765,15 +779,15 @@ export default function ClientLedger({
                   placeholder="e.g. 129950"
                   value={newTx.amount}
                   onChange={(e) => setNewTx({ ...newTx, amount: e.target.value })}
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-200 focus:border-amber-500 focus:outline-none font-mono text-sm"
+                  className={`w-full ${isDay ? 'bg-slate-50 border-slate-300 text-slate-900 placeholder-slate-400 focus:bg-white' : 'bg-slate-950 border-slate-800 text-slate-200 placeholder-slate-500'} border rounded-xl px-3 py-2 text-xs focus:border-amber-500 focus:outline-none font-mono text-sm`}
                 />
               </div>
 
-              <div className="flex justify-end gap-2 pt-3 border-t border-slate-800">
+              <div className={`flex justify-end gap-2 pt-3 border-t ${isDay ? 'border-slate-200' : 'border-slate-800'}`}>
                 <button
                   type="button"
                   onClick={() => setShowAddTxModal(false)}
-                  className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-xs font-semibold"
+                  className={`px-4 py-2 ${isDay ? 'bg-slate-100 hover:bg-slate-200 text-slate-700' : 'bg-slate-800 hover:bg-slate-700 text-slate-300'} rounded-xl text-xs font-semibold`}
                 >
                   Cancel
                 </button>

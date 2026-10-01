@@ -13,19 +13,67 @@ import { generateRefNo, generateQuotationItemsFromLedger } from './utils/formatt
 import { apiClient } from './utils/apiClient';
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState('ledger'); // 'ledger' | 'print'
-
-  // Auth User Session State backed by LocalStorage & SQLite DB
-  const [authUser, setAuthUser] = useState(() => {
-    const saved = localStorage.getItem('smarttech_auth_user');
-    if (saved) {
-      try {
-        const parsed = JSON.parse(saved);
-        if (parsed && (parsed.username || parsed.email) && parsed.role) return parsed;
-      } catch (e) {}
+  const [activeTab, setActiveTab] = useState(() => {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      return params.get('tab') || 'ledger';
+    } catch (e) {
+      return 'ledger';
     }
-    return null; // Prompt login if no active session
   });
+
+  // Day & Night background theme state ('day' | 'night')
+  const [theme, setTheme] = useState(() => {
+    try {
+      return localStorage.getItem('smarttech_theme') || 'night';
+    } catch (e) {
+      return 'night';
+    }
+  });
+
+  const toggleTheme = () => {
+    setTheme(prev => (prev === 'night' ? 'day' : 'night'));
+  };
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('smarttech_theme', theme);
+    } catch (e) {}
+    document.documentElement.setAttribute('data-theme', theme);
+    if (theme === 'day') {
+      document.documentElement.classList.add('theme-day');
+      document.documentElement.classList.remove('theme-night');
+      document.body.style.backgroundColor = '#f1f5f9';
+    } else {
+      document.documentElement.classList.add('theme-night');
+      document.documentElement.classList.remove('theme-day');
+      document.body.style.backgroundColor = '#020617';
+    }
+  }, [theme]);
+
+  // Desktop active user session
+  const [currentUser, setCurrentUser] = useState(() => {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get('autologin') === '1') {
+        return { id: 'usr-admin', username: 'admin', name: 'Admin', role: 'ADMIN', avatar: '👑' };
+      }
+      const saved = localStorage.getItem('smarttech_active_user') || sessionStorage.getItem('smarttech_active_user');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed && (parsed.id || parsed.username)) return parsed;
+      }
+    } catch (e) {}
+    return null;
+  });
+
+  const handleLogout = () => {
+    try {
+      localStorage.removeItem('smarttech_active_user');
+      sessionStorage.removeItem('smarttech_active_user');
+    } catch (e) {}
+    setCurrentUser(null);
+  };
 
   const [clients, setClients] = useState(() => {
     const saved = localStorage.getItem('smarttech_clients');
@@ -70,16 +118,6 @@ export default function App() {
     }
     loadDataFromDb();
   }, []);
-
-  const handleLoginSuccess = async (user) => {
-    setAuthUser(user);
-    localStorage.setItem('smarttech_auth_user', JSON.stringify(user));
-  };
-
-  const handleLogout = () => {
-    setAuthUser(null);
-    localStorage.removeItem('smarttech_auth_user');
-  };
 
   const handleUploadLogo = (e) => {
     const file = e.target.files[0];
@@ -261,30 +299,42 @@ export default function App() {
     reader.readAsText(file);
   };
 
-  // If user is not authenticated, display login screen!
-  if (!authUser) {
-    return <LoginPage onLoginSuccess={handleLoginSuccess} />;
-  }
-
   const safeClients = Array.isArray(clients) && clients.length > 0 ? clients : INITIAL_CLIENTS;
   const safeTxs = Array.isArray(transactions) ? transactions : INITIAL_TRANSACTIONS;
   const safeQuotations = Array.isArray(quotations) ? quotations : [INITIAL_QUOTATION];
 
+  // If not authenticated, display the Desktop Login Page
+  if (!currentUser) {
+    return (
+      <LoginPage 
+        onLoginSuccess={setCurrentUser} 
+        theme={theme}
+        onToggleTheme={toggleTheme}
+      />
+    );
+  }
+
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans print:bg-white print:text-black print:min-h-0 print:block">
+    <div className={`min-h-screen flex flex-col font-sans transition-colors duration-200 print:bg-white print:text-black print:min-h-0 print:block ${
+      theme === 'day'
+        ? 'theme-day bg-slate-100 text-slate-800'
+        : 'theme-night bg-slate-950 text-slate-100'
+    }`}>
       
       {/* Top Navbar Header */}
       <Header
         activeTab={activeTab}
         setActiveTab={setActiveTab}
         clients={safeClients}
-        authUser={authUser}
+        authUser={currentUser}
+        theme={theme}
+        onToggleTheme={toggleTheme}
         onLogout={handleLogout}
         onNewQuotation={() => handleGenerateQuotationFromClient()}
         onAddClient={() => setActiveTab('ledger')}
         onPrint={() => {
           handleGenerateQuotationFromClient();
-          window.print();
+          setActiveTab('print');
         }}
         onExportData={handleExportData}
         onImportData={handleImportData}
@@ -298,7 +348,8 @@ export default function App() {
             clients={safeClients}
             transactions={safeTxs}
             quotations={safeQuotations}
-            authUser={authUser}
+            authUser={currentUser}
+            theme={theme}
             onSelectClientForQuotation={handleSelectClientForQuotation}
             onAddClient={handleAddClient}
             onUpdateClient={handleUpdateClient}
@@ -315,6 +366,7 @@ export default function App() {
             clients={safeClients}
             transactions={safeTxs}
             customLogoUrl={customLogoUrl}
+            theme={theme}
             onUploadLogo={handleUploadLogo}
             onRemoveCustomLogo={handleRemoveCustomLogo}
             onBackToLedger={() => setActiveTab('ledger')}

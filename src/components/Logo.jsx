@@ -18,7 +18,7 @@ export default function Logo({
         src={logoSrc} 
         alt="SMART TECH ™ Logo" 
         style={{ 
-          maxHeight: variant === 'icon-only' ? '85px' : (printMode ? '165px' : '145px'), 
+          maxHeight: variant === 'icon-only' ? '85px' : (printMode ? '85px' : '145px'), 
           width: 'auto', 
           objectFit: 'contain', 
           display: 'block', 

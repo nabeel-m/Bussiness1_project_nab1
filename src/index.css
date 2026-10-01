@@ -40,44 +40,69 @@
     border: none !important;
   }
 
-  /* Reset body/page wrapper — clean white background */
+  /* Reset body/page wrapper — clean white background with exact A4 boundaries */
   html,
   body,
   #root {
     background: #ffffff !important;
     margin: 0 !important;
     padding: 0 !important;
-    overflow: visible !important;
+    width: 210mm !important;
+    height: 297mm !important;
+    overflow: hidden !important;
+    position: relative !important;
   }
 
-  /* Outer wrapper: remove dark background */
+  /* Outer wrapper: remove margins and paddings in print */
+  #root > div,
+  main,
   .max-w-5xl,
   .max-w-4xl {
     background: #ffffff !important;
     padding: 0 !important;
-    margin: 0 auto !important;
+    margin: 0 !important;
     max-width: 100% !important;
     width: 100% !important;
+    height: 100% !important;
   }
 
-  /* The A4 quotation sheet — keep luxury borders, spacing, and watermark */
+  /* The A4 quotation sheet — strictly framed with identical 10mm margins on all 4 sides */
   .quotation-sheet-container {
-    display: block !important;
+    display: flex !important;
+    flex-direction: column !important;
+    justify-content: space-between !important;
     visibility: visible !important;
-    width: 100% !important;
-    max-width: 100% !important;
-    margin: 0 auto !important;
-    padding: 32px !important;
+    position: absolute !important;
+    top: 10mm !important;
+    left: 10mm !important;
+    width: 190mm !important;
+    max-width: 190mm !important;
+    height: 277mm !important;
+    max-height: 277mm !important;
+    min-height: 277mm !important;
+    box-sizing: border-box !important;
+    margin: 0 !important;
+    padding: 16px 20px !important;
     box-shadow: none !important;
     border: 2.5px solid #b45309 !important;
     outline: 1.5px solid #f59e0b !important;
     outline-offset: -6px !important;
     background: #ffffff !important;
-    position: relative !important;
     page-break-after: avoid !important;
     page-break-inside: avoid !important;
+    page-break-before: avoid !important;
     -webkit-print-color-adjust: exact !important;
     print-color-adjust: exact !important;
+    overflow: hidden !important;
+  }
+
+  .quotation-sheet-container .relative.z-10 {
+    display: flex !important;
+    flex-direction: column !important;
+    justify-content: space-between !important;
+    height: 100% !important;
+    min-height: 0 !important;
+    flex: 1 !important;
   }
 
   .quotation-watermark {
@@ -107,7 +132,7 @@
     color: #d97706 !important;
   }
 
-  /* Table: preserve orange header */
+  /* Table: preserve orange header & compact elegant rows */
   .quotation-sheet-container table {
     width: 100% !important;
     border-collapse: collapse !important;
@@ -119,7 +144,8 @@
     background-color: #ea580c !important;
     color: #ffffff !important;
     font-weight: 700 !important;
-    padding: 8px 10px !important;
+    padding: 6px 8px !important;
+    font-size: 11px !important;
   }
 
   /* Striped rows */
@@ -131,9 +157,15 @@
   }
 
   .quotation-sheet-container td {
-    padding: 8px 10px !important;
+    padding: 5px 8px !important;
     color: #1e293b !important;
     border-bottom: 1px solid #fed7aa !important;
+    font-size: 11px !important;
+  }
+
+  .quotation-sheet-container td.whitespace-nowrap,
+  .quotation-sheet-container th.whitespace-nowrap {
+    white-space: nowrap !important;
   }
 
   /* Keep flex layouts working */
@@ -146,14 +178,14 @@
     visibility: visible !important;
   }
 
-  /* Page setup - Equal 10mm margins on all 4 sides (vertical and horizontal) */
+  /* Page setup - zero margin so browser headers/footers do not show and exact margins are controlled by sheet */
   @page {
     size: A4 portrait;
-    margin: 10mm;
+    margin: 0;
   }
 }
 
-/* Custom scrollbar for dark UI */
+/* Custom scrollbar - Night mode default */
 ::-webkit-scrollbar {
   width: 8px;
   height: 8px;
@@ -168,3 +200,31 @@
 ::-webkit-scrollbar-thumb:hover {
   background: #475569;
 }
+
+/* Custom scrollbar - Day mode */
+.theme-day ::-webkit-scrollbar-track,
+[data-theme="day"] ::-webkit-scrollbar-track {
+  background: #f1f5f9;
+}
+.theme-day ::-webkit-scrollbar-thumb,
+[data-theme="day"] ::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 4px;
+}
+.theme-day ::-webkit-scrollbar-thumb:hover,
+[data-theme="day"] ::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
+
+@keyframes spinSlow {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+.animate-spin-slow {
+  animation: spinSlow 12s linear infinite;
+}
+
