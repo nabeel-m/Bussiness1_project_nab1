@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   FileText, 
   Users, 
@@ -9,7 +9,15 @@ import {
   Briefcase,
   LogOut,
   Sun,
-  Moon
+  Moon,
+  HardDrive,
+  FolderOpen,
+  ShieldCheck,
+  CheckCircle2,
+  Clock,
+  X,
+  RefreshCw,
+  AlertCircle
 } from 'lucide-react';
 import smartTechLogo from '../assets/logo_new.png';
 
@@ -30,6 +38,85 @@ export default function Header({
 }) {
   const isAdmin = authUser?.role === 'ADMIN';
   const isDay = theme === 'day';
+  const isDesktop = typeof window !== 'undefined' && !!window.electronAPI;
+
+  const [showBackupModal, setShowBackupModal] = useState(false);
+  const [backupStatus, setBackupStatus] = useState(null);
+  const [isBackingUp, setIsBackingUp] = useState(false);
+  const [backupMsg, setBackupMsg] = useState(null);
+
+  const fetchBackupStatus = async () => {
+    if (window.electronAPI?.getBackupStatus) {
+      try {
+        const status = await window.electronAPI.getBackupStatus();
+        setBackupStatus(status);
+      } catch (e) {}
+    }
+  };
+
+  useEffect(() => {
+    if (isDesktop) {
+      fetchBackupStatus();
+      if (window.electronAPI?.onAutoBackupCompleted) {
+        const unsubscribe = window.electronAPI.onAutoBackupCompleted(() => {
+          fetchBackupStatus();
+        });
+        return unsubscribe;
+      }
+    }
+  }, [isDesktop]);
+
+  const handleOpenBackupModal = () => {
+    fetchBackupStatus();
+    setBackupMsg(null);
+    setShowBackupModal(true);
+  };
+
+  const handleTriggerBackupNow = async () => {
+    if (!window.electronAPI?.triggerAutoBackup) return;
+    setIsBackingUp(true);
+    setBackupMsg(null);
+    try {
+      const res = await window.electronAPI.triggerAutoBackup();
+      if (res && res.success) {
+        setBackupMsg({ 
+          type: 'success', 
+          text: `Backup saved to Documents\\SMART TECH Backups (${res.jsonFile})` 
+        });
+        await fetchBackupStatus();
+      } else {
+        setBackupMsg({ type: 'error', text: res?.error || 'Failed to create backup' });
+      }
+    } catch (err) {
+      setBackupMsg({ type: 'error', text: err.message });
+    } finally {
+      setIsBackingUp(false);
+    }
+  };
+
+  const handleOpenBackupFolder = async () => {
+    if (window.electronAPI?.openBackupFolder) {
+      try {
+        await window.electronAPI.openBackupFolder();
+      } catch (e) {}
+    }
+  };
+
+  const formatBackupDate = (dateStr) => {
+    if (!dateStr) return 'Never';
+    try {
+      const d = new Date(dateStr);
+      return d.toLocaleDateString([], { 
+        year: 'numeric', 
+        month: 'short', 
+        day: '2-digit', 
+        hour: '2-digit', 
+        minute: '2-digit' 
+      });
+    } catch (e) {
+      return String(dateStr);
+    }
+  };
 
   return (
     <header className={`${isDay ? 'bg-white/95 border-b border-slate-200 text-slate-800 shadow-sm' : 'bg-slate-900 border-b border-slate-800 text-white'} sticky top-0 z-40 no-print transition-colors duration-200`}>
@@ -132,6 +219,22 @@ export default function Header({
             {/* Admin Operations */}
             {isAdmin && (
               <>
+                {/* Weekly Auto-Backup Status & Manager Button */}
+                <button
+                  type="button"
+                  onClick={handleOpenBackupModal}
+                  className={`flex items-center space-x-1.5 px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-all border shadow-sm ${
+                    isDay
+                      ? 'bg-amber-50 hover:bg-amber-100 text-amber-900 border-amber-200'
+                      : 'bg-slate-800 hover:bg-slate-700 text-amber-400 border-slate-700'
+                  }`}
+                  title="Weekly Database Auto-Backup (User's Documents)"
+                >
+                  <HardDrive className="w-3.5 h-3.5 text-amber-500" />
+                  <span className="hidden xl:inline text-[11px] font-bold">Auto-Backup</span>
+                  <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" title="Weekly Auto-Backup Active" />
+                </button>
+
                 <label className={`cursor-pointer ${isDay ? 'bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200' : 'bg-slate-800 hover:bg-slate-700 text-slate-300'} text-xs px-2.5 py-2 rounded-lg flex items-center space-x-1 transition-all`} title="Import Backup JSON">
                   <Upload className="w-3.5 h-3.5" />
                   <input type="file" accept=".json" onChange={onImportData} className="hidden" />
@@ -191,6 +294,175 @@ export default function Header({
 
         </div>
       </div>
+
+      {/* ── Database Auto-Backup Manager Modal ── */}
+      {showBackupModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-150">
+          <div 
+            className={`w-full max-w-lg rounded-3xl p-6 border shadow-2xl transition-all ${
+              isDay ? 'bg-white text-slate-800 border-slate-200' : 'bg-slate-900 text-slate-100 border-slate-800'
+            }`}
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Modal Header */}
+            <div className="flex items-center justify-between pb-4 border-b border-slate-200 dark:border-slate-800">
+              <div className="flex items-center space-x-3">
+                <div className="w-10 h-10 rounded-2xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-amber-500">
+                  <ShieldCheck className="w-6 h-6" />
+                </div>
+                <div>
+                  <h3 className="text-base font-extrabold flex items-center space-x-2">
+                    <span>Database Auto-Backup Manager</span>
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-500 border border-emerald-500/20">
+                      WEEKLY ACTIVE
+                    </span>
+                  </h3>
+                  <p className={`text-xs ${isDay ? 'text-slate-500' : 'text-slate-400'}`}>
+                    Automatic weekly scheduled database export to user Documents
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowBackupModal(false)}
+                className={`p-1.5 rounded-xl ${isDay ? 'hover:bg-slate-100 text-slate-500' : 'hover:bg-slate-800 text-slate-400'} transition-colors`}
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Notification message banner */}
+            {backupMsg && (
+              <div className={`mt-4 p-3 rounded-xl text-xs flex items-start space-x-2 border ${
+                backupMsg.type === 'success' 
+                  ? 'bg-emerald-950/40 border-emerald-500/30 text-emerald-300' 
+                  : 'bg-rose-950/40 border-rose-500/30 text-rose-300'
+              }`}>
+                {backupMsg.type === 'success' ? (
+                  <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-400 mt-0.5" />
+                ) : (
+                  <AlertCircle className="w-4 h-4 shrink-0 text-rose-400 mt-0.5" />
+                )}
+                <span>{backupMsg.text}</span>
+              </div>
+            )}
+
+            {/* Details Card */}
+            <div className={`mt-4 p-4 rounded-2xl border space-y-3.5 ${
+              isDay ? 'bg-slate-50 border-slate-200' : 'bg-slate-950 border-slate-800/80'
+            }`}>
+              {/* Destination Folder */}
+              <div>
+                <label className="text-[11px] font-bold text-amber-500 uppercase tracking-wider block mb-1">
+                  Backup Storage Location
+                </label>
+                <div className={`text-xs font-mono p-2.5 rounded-xl border flex items-center justify-between ${
+                  isDay ? 'bg-white border-slate-200 text-slate-700' : 'bg-slate-900 border-slate-800 text-slate-300'
+                }`}>
+                  <span className="truncate pr-2 select-all">
+                    {backupStatus?.folderPath || (isDesktop ? 'Documents\\SMART TECH Backups' : 'Browser Local Storage & SQLite')}
+                  </span>
+                  {isDesktop && (
+                    <button
+                      type="button"
+                      onClick={handleOpenBackupFolder}
+                      className="shrink-0 flex items-center space-x-1 text-amber-500 hover:text-amber-400 text-xs font-bold"
+                      title="Open in Windows Explorer"
+                    >
+                      <FolderOpen className="w-3.5 h-3.5" />
+                      <span>Open</span>
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {/* Schedule and Status */}
+              <div className="grid grid-cols-2 gap-3 pt-1">
+                <div className={`p-3 rounded-xl border ${isDay ? 'bg-white border-slate-200' : 'bg-slate-900 border-slate-800'}`}>
+                  <div className="flex items-center space-x-1.5 text-xs text-slate-400 mb-1">
+                    <Clock className="w-3.5 h-3.5 text-amber-500" />
+                    <span>Auto-Schedule</span>
+                  </div>
+                  <div className="text-xs font-bold text-emerald-400">
+                    Every 7 Days (Weekly)
+                  </div>
+                  <div className="text-[10px] text-slate-500 mt-0.5">
+                    Background automated export
+                  </div>
+                </div>
+
+                <div className={`p-3 rounded-xl border ${isDay ? 'bg-white border-slate-200' : 'bg-slate-900 border-slate-800'}`}>
+                  <div className="flex items-center space-x-1.5 text-xs text-slate-400 mb-1">
+                    <CheckCircle2 className="w-3.5 h-3.5 text-blue-400" />
+                    <span>Last Backed Up</span>
+                  </div>
+                  <div className="text-xs font-bold truncate">
+                    {formatBackupDate(backupStatus?.lastBackupDate)}
+                  </div>
+                  <div className="text-[10px] text-slate-500 mt-0.5 truncate">
+                    {backupStatus?.lastJsonFile || 'Scheduled on app start'}
+                  </div>
+                </div>
+              </div>
+
+              {/* Files Protected */}
+              <div className="pt-1">
+                <div className="text-[11px] text-slate-400">
+                  <span className="font-semibold text-slate-300">Files exported per backup:</span>
+                  <ul className="list-disc list-inside mt-1 space-y-0.5 text-[11px] text-slate-500">
+                    <li><span className="font-mono text-slate-400">smarttech_backup_*.json</span> (Full JSON ledger & quotations snapshot)</li>
+                    <li><span className="font-mono text-slate-400">smarttech_database_*.sqlite</span> (Complete binary SQLite database clone)</li>
+                  </ul>
+                </div>
+              </div>
+            </div>
+
+            {/* Actions Footer */}
+            <div className="mt-6 flex flex-wrap items-center justify-between gap-3 pt-3 border-t border-slate-200 dark:border-slate-800">
+              <div className="flex items-center space-x-2">
+                {isDesktop && (
+                  <button
+                    type="button"
+                    onClick={handleOpenBackupFolder}
+                    className={`flex items-center space-x-1.5 px-3 py-2 rounded-xl text-xs font-bold border transition-all ${
+                      isDay 
+                        ? 'bg-slate-100 hover:bg-slate-200 text-slate-700 border-slate-300' 
+                        : 'bg-slate-800 hover:bg-slate-700 text-slate-200 border-slate-700'
+                    }`}
+                  >
+                    <FolderOpen className="w-4 h-4 text-amber-500" />
+                    <span>Open Documents Folder</span>
+                  </button>
+                )}
+              </div>
+
+              <div className="flex items-center space-x-2">
+                {isDesktop && (
+                  <button
+                    type="button"
+                    onClick={handleTriggerBackupNow}
+                    disabled={isBackingUp}
+                    className="flex items-center space-x-1.5 px-4 py-2 rounded-xl text-xs font-extrabold bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 shadow-md shadow-amber-500/20 transition-all disabled:opacity-50"
+                  >
+                    <RefreshCw className={`w-3.5 h-3.5 ${isBackingUp ? 'animate-spin' : ''}`} />
+                    <span>{isBackingUp ? 'Backing Up...' : 'Backup Now'}</span>
+                  </button>
+                )}
+
+                <button
+                  type="button"
+                  onClick={() => setShowBackupModal(false)}
+                  className={`px-4 py-2 rounded-xl text-xs font-bold transition-all ${
+                    isDay ? 'bg-slate-200 hover:bg-slate-300 text-slate-800' : 'bg-slate-800 hover:bg-slate-700 text-slate-300'
+                  }`}
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+
+          </div>
+        </div>
+      )}
     </header>
   );
 }

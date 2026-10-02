@@ -265,6 +265,232 @@ async function createWindow() {
   });
 }
 
+// -------------------------------------------------------------
+// Automatic Weekly Database Backup System (User's Documents folder)
+// -------------------------------------------------------------
+const WEEK_IN_MS = 7 * 24 * 60 * 60 * 1000;
+
+function getBackupDirectory() {
+  const docsDir = app.getPath('documents');
+  const backupDir = path.join(docsDir, 'SMART TECH Backups');
+  if (!fs.existsSync(backupDir)) {
+    fs.mkdirSync(backupDir, { recursive: true });
+  }
+
+  const readmePath = path.join(backupDir, 'README_BACKUPS.txt');
+  if (!fs.existsSync(readmePath)) {
+    const readmeContent = [
+      '==============================================================',
+      '   SMART TECH Billing & Quotation — Automatic Weekly Backups',
+      '==============================================================',
+      '',
+      'This folder contains automatic weekly backups of your SMART TECH',
+      'software database and ledger accounts.',
+      '',
+      'Files created automatically each week:',
+      ' 1. smarttech_backup_YYYY-MM-DD_HH-mm-ss.json',
+      '    (Full JSON export — can be viewed in any text editor or restored',
+      '     via the "Import Backup" button inside the software)',
+      '',
+      ' 2. smarttech_database_YYYY-MM-DD_HH-mm-ss.sqlite',
+      '    (Complete binary clone of the SQLite database)',
+      '',
+      'Do not delete this folder. Keep these files safe for data recovery.',
+      '=============================================================='
+    ].join('\r\n');
+    try {
+      fs.writeFileSync(readmePath, readmeContent, 'utf8');
+    } catch (e) {}
+  }
+  return backupDir;
+}
+
+function getMetadataPath() {
+  return path.join(getBackupDirectory(), 'backup_metadata.json');
+}
+
+function getBackupMetadata() {
+  try {
+    const metaPath = getMetadataPath();
+    if (fs.existsSync(metaPath)) {
+      return JSON.parse(fs.readFileSync(metaPath, 'utf8'));
+    }
+  } catch (e) {}
+  return {
+    lastBackupTime: 0,
+    lastBackupDate: null,
+    lastJsonFile: null,
+    lastSqliteFile: null,
+    folderPath: getBackupDirectory(),
+    intervalDays: 7,
+    status: 'active'
+  };
+}
+
+function saveBackupMetadata(meta) {
+  try {
+    fs.writeFileSync(getMetadataPath(), JSON.stringify(meta, null, 2), 'utf8');
+  } catch (e) {
+    logDebug(`[AutoBackup] Failed to save metadata: ${e.message}`);
+  }
+}
+
+function cleanupOldBackups(backupDir, maxToKeep = 12) {
+  try {
+    const files = fs.readdirSync(backupDir);
+    const jsonBackups = files
+      .filter(f => f.startsWith('smarttech_backup_') && f.endsWith('.json'))
+      .map(f => {
+        const fullPath = path.join(backupDir, f);
+        return { name: f, fullPath, time: fs.statSync(fullPath).mtimeMs };
+      })
+      .sort((a, b) => a.time - b.time);
+
+    if (jsonBackups.length > maxToKeep) {
+      const toRemove = jsonBackups.slice(0, jsonBackups.length - maxToKeep);
+      for (const item of toRemove) {
+        try {
+          fs.unlinkSync(item.fullPath);
+          const baseName = item.name.replace('smarttech_backup_', 'smarttech_database_').replace('.json', '.sqlite');
+          const sqlitePath = path.join(backupDir, baseName);
+          if (fs.existsSync(sqlitePath)) {
+            fs.unlinkSync(sqlitePath);
+          }
+          logDebug(`[AutoBackup] Pruned old backup: ${item.name}`);
+        } catch (e) {}
+      }
+    }
+  } catch (err) {
+    logDebug(`[AutoBackup] Error pruning old backups: ${err.message}`);
+  }
+}
+
+function fetchJsonBackup() {
+  return new Promise((resolve, reject) => {
+    const req = http.get(`http://127.0.0.1:${BACKEND_PORT}/api/backup/export`, { timeout: 6000 }, (res) => {
+      let data = '';
+      res.on('data', chunk => { data += chunk; });
+      res.on('end', () => {
+        try {
+          resolve(JSON.parse(data));
+        } catch (e) {
+          reject(new Error('Failed to parse backup JSON: ' + e.message));
+        }
+      });
+    });
+    req.on('error', reject);
+    req.on('timeout', () => {
+      req.destroy();
+      reject(new Error('Backup request timed out'));
+    });
+  });
+}
+
+function checkpointDatabase() {
+  return new Promise((resolve) => {
+    const req = http.request({
+      hostname: '127.0.0.1',
+      port: BACKEND_PORT,
+      path: '/api/backup/checkpoint',
+      method: 'POST',
+      timeout: 3000
+    }, () => resolve(true));
+    req.on('error', () => resolve(false));
+    req.on('timeout', () => { req.destroy(); resolve(false); });
+    req.end();
+  });
+}
+
+async function performAutoBackup(isManual = false) {
+  try {
+    logDebug(`[AutoBackup] Starting ${isManual ? 'manual' : 'scheduled weekly'} backup...`);
+    const backupDir = getBackupDirectory();
+
+    // 1. Checkpoint SQLite database so all WAL writes are flushed
+    await checkpointDatabase();
+
+    // 2. Fetch full JSON backup data from backend
+    const backupData = await fetchJsonBackup();
+
+    // 3. Format timestamp: YYYY-MM-DD_HH-mm-ss
+    const now = new Date();
+    const pad = (n) => String(n).padStart(2, '0');
+    const timestampStr = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}_${pad(now.getHours())}-${pad(now.getMinutes())}-${pad(now.getSeconds())}`;
+
+    const jsonFileName = `smarttech_backup_${timestampStr}.json`;
+    const jsonFilePath = path.join(backupDir, jsonFileName);
+    fs.writeFileSync(jsonFilePath, JSON.stringify(backupData, null, 2), 'utf8');
+
+    // 4. Also copy the binary SQLite database file
+    const dbPath = resolveDatabasePath();
+    let sqliteFileName = null;
+    if (fs.existsSync(dbPath)) {
+      sqliteFileName = `smarttech_database_${timestampStr}.sqlite`;
+      const sqliteFilePath = path.join(backupDir, sqliteFileName);
+      fs.copyFileSync(dbPath, sqliteFilePath);
+    }
+
+    // 5. Update metadata
+    const meta = {
+      lastBackupTime: now.getTime(),
+      lastBackupDate: now.toISOString(),
+      lastJsonFile: jsonFileName,
+      lastSqliteFile: sqliteFileName,
+      folderPath: backupDir,
+      intervalDays: 7,
+      status: 'active'
+    };
+    saveBackupMetadata(meta);
+
+    // 6. Cleanup older backups (keep last 12 weeks)
+    cleanupOldBackups(backupDir, 12);
+
+    logDebug(`[AutoBackup] Backup completed successfully. Saved to: ${backupDir}`);
+
+    // 7. Notify renderer window if available
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('auto-backup-completed', {
+        success: true,
+        date: now.toISOString(),
+        jsonFile: jsonFileName,
+        sqliteFile: sqliteFileName,
+        folderPath: backupDir,
+        isManual
+      });
+    }
+
+    return {
+      success: true,
+      date: now.toISOString(),
+      jsonFile: jsonFileName,
+      sqliteFile: sqliteFileName,
+      folderPath: backupDir,
+      isManual
+    };
+  } catch (err) {
+    logDebug(`[AutoBackup] Failed to perform backup: ${err.message}`);
+    return {
+      success: false,
+      error: err.message
+    };
+  }
+}
+
+async function checkAndRunScheduledBackup() {
+  const meta = getBackupMetadata();
+  const now = Date.now();
+  const timeSinceLast = now - (meta.lastBackupTime || 0);
+
+  if (timeSinceLast >= WEEK_IN_MS) {
+    const daysSince = meta.lastBackupTime ? Math.round(timeSinceLast / (24 * 3600 * 1000)) : 'first time';
+    logDebug(`[AutoBackup] Scheduled weekly backup is due (${daysSince}). Triggering backup now...`);
+    await performAutoBackup(false);
+  } else {
+    const daysLeft = Math.ceil((WEEK_IN_MS - timeSinceLast) / (24 * 3600 * 1000));
+    logDebug(`[AutoBackup] Backup is up to date. Next scheduled backup in approx ${daysLeft} day(s).`);
+  }
+}
+
 // IPC Handlers
 ipcMain.on('print-document', (event) => {
   ensureLegacyPrintDialog();
@@ -303,6 +529,32 @@ ipcMain.on('open-external', (_, url) => {
   }
 });
 
+// Auto-backup IPC handlers
+ipcMain.handle('trigger-auto-backup', async () => {
+  return await performAutoBackup(true);
+});
+
+ipcMain.handle('open-backup-folder', async () => {
+  const dir = getBackupDirectory();
+  await shell.openPath(dir);
+  return dir;
+});
+
+ipcMain.handle('get-backup-status', () => {
+  const meta = getBackupMetadata();
+  const now = Date.now();
+  const timeSinceLast = now - (meta.lastBackupTime || 0);
+  const isDue = timeSinceLast >= WEEK_IN_MS;
+  const daysUntilNext = Math.max(0, Math.ceil((WEEK_IN_MS - timeSinceLast) / (24 * 3600 * 1000)));
+
+  return {
+    ...meta,
+    isDue,
+    daysUntilNext,
+    backupDir: getBackupDirectory()
+  };
+});
+
 app.whenReady().then(async () => {
   logDebug('app.whenReady() resolved');
   
@@ -311,6 +563,20 @@ app.whenReady().then(async () => {
 
   // 2. Open desktop window and load application directly
   createWindow();
+
+  // 3. Start Weekly Database Auto-Backup Service
+  setTimeout(() => {
+    checkAndRunScheduledBackup().catch(e => {
+      logDebug(`[AutoBackup Startup Error]: ${e.message}`);
+    });
+  }, 3500);
+
+  // Periodic check every 6 hours while desktop app is open
+  setInterval(() => {
+    checkAndRunScheduledBackup().catch(e => {
+      logDebug(`[AutoBackup Periodic Error]: ${e.message}`);
+    });
+  }, 6 * 60 * 60 * 1000);
 
   app.on('activate', () => {
     logDebug('app "activate" event fired');

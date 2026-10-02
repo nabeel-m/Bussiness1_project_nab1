@@ -100,6 +100,28 @@ export default function App() {
   const [quotations, setQuotations] = useState(() => [INITIAL_QUOTATION]);
   const [currentQuotation, setCurrentQuotation] = useState(INITIAL_QUOTATION);
   const [customLogoUrl, setCustomLogoUrl] = useState(null);
+  const [backupNotification, setBackupNotification] = useState(null);
+
+  // Listen for automatic / manual background backup events from Electron
+  useEffect(() => {
+    if (typeof window !== 'undefined' && window.electronAPI?.onAutoBackupCompleted) {
+      const unsubscribe = window.electronAPI.onAutoBackupCompleted((data) => {
+        if (data && data.success) {
+          const timeStr = new Date(data.date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+          setBackupNotification({
+            title: data.isManual ? 'Manual Backup Created' : 'Weekly Auto-Backup Saved',
+            message: 'Documents/SMART TECH Backups',
+            file: data.jsonFile,
+            time: timeStr
+          });
+          setTimeout(() => {
+            setBackupNotification(null);
+          }, 6000);
+        }
+      });
+      return unsubscribe;
+    }
+  }, []);
 
   // Sync state with SQLite Backend Database on Initial App Load
   useEffect(() => {
@@ -374,6 +396,31 @@ export default function App() {
           />
         </div>
       </main>
+
+      {/* Auto-Backup Completion Toast */}
+      {backupNotification && (
+        <div className="fixed bottom-5 right-5 z-50 bg-slate-900 border border-emerald-500/50 text-white px-4 py-3 rounded-2xl shadow-2xl flex items-center space-x-3 animate-in fade-in slide-in-from-bottom-4 transition-all no-print">
+          <div className="w-8 h-8 rounded-xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center shrink-0">
+            <span className="text-base">💾</span>
+          </div>
+          <div>
+            <div className="text-xs font-bold text-emerald-400 flex items-center space-x-1.5">
+              <span>{backupNotification.title}</span>
+              <span className="text-[10px] text-slate-400">({backupNotification.time})</span>
+            </div>
+            <div className="text-[11px] text-slate-300">
+              Saved to <span className="font-mono text-amber-400">{backupNotification.message}</span>
+            </div>
+          </div>
+          <button 
+            type="button"
+            onClick={() => setBackupNotification(null)}
+            className="text-slate-400 hover:text-white ml-2 text-xs p-1"
+          >
+            ✕
+          </button>
+        </div>
+      )}
 
     </div>
   );

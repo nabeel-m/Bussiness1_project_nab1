@@ -449,6 +449,15 @@ app.get('/api/company', (req, res) => {
 // -------------------------------------------------------------
 // System Backup & Reset Endpoints
 // -------------------------------------------------------------
+app.post('/api/backup/checkpoint', (req, res) => {
+  try {
+    db.pragma('wal_checkpoint(TRUNCATE)');
+    res.json({ success: true, message: 'Database WAL checkpoint complete' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.get('/api/backup/export', (req, res) => {
   const clients = db.prepare('SELECT * FROM clients').all();
   const transactions = db.prepare('SELECT * FROM transactions').all();
@@ -456,9 +465,12 @@ app.get('/api/backup/export', (req, res) => {
     ...q,
     items: JSON.parse(q.itemsJson || '[]')
   }));
+  const company = db.prepare('SELECT * FROM company_info WHERE id = 1').get() || null;
   
   res.json({
     exportDate: new Date().toISOString(),
+    version: '1.0.0',
+    company,
     clients,
     transactions,
     quotations
