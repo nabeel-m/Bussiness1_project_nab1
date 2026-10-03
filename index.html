@@ -4,15 +4,35 @@
     <meta charset="UTF-8" />
     <link rel="icon" type="image/png" href="./icon.png" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>SMART TECH | Billing & Quotation Software</title>
-    <!-- Google Fonts -->
+    <title>SMART TECH v2.0 | Billing & Quotation Software</title>
+    <!-- Non-blocking Google Fonts with instant local fallback -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700;800;900&family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;500;600;700;800&family=Times+New+Roman&display=swap" rel="stylesheet">
-    <script type="module" crossorigin src="./assets/index-CKS8Wt-Z.js"></script>
-    <link rel="stylesheet" crossorigin href="./assets/index-DS5gjrV7.css">
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700;800;900&family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;500;600;700;800&family=Times+New+Roman&display=swap" media="print" onload="this.media='all'">
+    <noscript>
+      <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700;800;900&family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;500;600;700;800&family=Times+New+Roman&display=swap" rel="stylesheet">
+    </noscript>
+    <script type="module" crossorigin src="./assets/index-Dl7jOzBP.js"></script>
+    <link rel="stylesheet" crossorigin href="./assets/index-CmuWLCLU.css">
   </head>
   <body class="bg-slate-950 text-slate-100 antialiased selection:bg-amber-500 selection:text-slate-900 min-h-screen">
-    <div id="root"></div>
+    <div id="root">
+      <!-- Instant Desktop Loading Screen (Paints in < 15ms) -->
+      <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100vh;background:#020617;color:#f8fafc;font-family:system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;user-select:none;">
+        <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px;">
+          <div style="width:44px;height:44px;background:linear-gradient(135deg,#f59e0b,#d97706);border-radius:12px;display:flex;align-items:center;justify-content:center;font-weight:900;font-size:20px;color:#0f172a;box-shadow:0 10px 25px -5px rgba(245,158,11,0.3);">ST</div>
+          <div>
+            <div style="font-size:22px;font-weight:800;letter-spacing:1px;color:#ffffff;line-height:1.1;">SMART TECH</div>
+            <div style="font-size:10px;font-weight:700;color:#f59e0b;letter-spacing:2.5px;text-transform:uppercase;">Interior & Exterior Solutions</div>
+          </div>
+        </div>
+        <div style="font-size:11px;color:#94a3b8;letter-spacing:1px;margin-bottom:28px;">Billing & Tally Quotation Software</div>
+        <div style="display:flex;align-items:center;gap:8px;">
+          <div style="width:24px;height:24px;border:2.5px solid rgba(245,158,11,0.2);border-top-color:#f59e0b;border-radius:50%;animation:stSpin 0.7s linear infinite;"></div>
+          <span style="font-size:11px;color:#cbd5e1;font-weight:500;">Starting application...</span>
+        </div>
+        <style>@keyframes stSpin{to{transform:rotate(360deg)}}</style>
+      </div>
+    </div>
   </body>
 </html>
