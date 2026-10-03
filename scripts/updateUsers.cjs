@@ -1,10 +1,21 @@
 const Database = require('better-sqlite3');
 const path = require('path');
 const fs = require('fs');
+const os = require('os');
+
+const crypto = require('crypto');
+
+function hashPassword(password) {
+  const salt = crypto.randomBytes(16).toString('hex');
+  const derivedKey = crypto.scryptSync(password, salt, 64);
+  return `scrypt:${salt}:${derivedKey.toString('hex')}`;
+}
 
 const dbPaths = [
   path.join(__dirname, '..', 'server', 'smarttech_database.sqlite'),
-  path.join(process.env.APPDATA || '', 'SMART TECH Billing & Quotation', 'smarttech_database.sqlite')
+  path.join(process.env.APPDATA || '', 'SMART TECH Billing & Quotation', 'smarttech_database.sqlite'),
+  path.join(process.env.APPDATA || '', 'smarttech-billing-quotation-sw', 'smarttech_database.sqlite'),
+  path.join(os.homedir(), 'SMART-TECH-Billing-App', 'server', 'smarttech_database.sqlite')
 ];
 
 for (const dbPath of dbPaths) {
@@ -19,40 +30,32 @@ for (const dbPath of dbPaths) {
   const db = new Database(dbPath);
   db.pragma('journal_mode = WAL');
 
-  // Purge all users except admin and developer
-  const delUsers = db.prepare("DELETE FROM users WHERE LOWER(username) NOT IN ('admin', 'developer')").run();
-  console.log(`Deleted ${delUsers.changes} non-admin/developer user records.`);
+  // Purge all users except Ashif and admin, explicitly deleting developer
+  const delUsers = db.prepare("DELETE FROM users WHERE LOWER(username) NOT IN ('ashif', 'admin') OR id = 'usr-developer' OR LOWER(username) = 'developer'").run();
+  console.log(`Deleted ${delUsers.changes} non-Ashif user records.`);
 
-  // Clean SSO slots
+  // Clean SSO slots (Ashif admin only)
   try {
-    const delSlots = db.prepare("DELETE FROM sso_access_slots WHERE id NOT IN ('slot-admin', 'slot-developer')").run();
-    console.log(`Deleted ${delSlots.changes} non-admin/developer SSO slot records.`);
+    const delSlots = db.prepare("DELETE FROM sso_access_slots WHERE id != 'slot-admin'").run();
+    console.log(`Deleted ${delSlots.changes} non-admin SSO slot records.`);
   } catch(e) {}
 
-  // Upsert admin user
-  const adminExists = db.prepare("SELECT * FROM users WHERE LOWER(username) = 'admin'").get();
-  if (!adminExists) {
+  // Salted scrypt hash for fabi*123
+  const hashedPassword = hashPassword('fabi*123');
+
+  // Upsert Ashif user
+  const ashifExists = db.prepare("SELECT * FROM users WHERE LOWER(username) IN ('ashif', 'admin')").get();
+  if (!ashifExists) {
     db.prepare("INSERT INTO users (id, username, password, name, role, avatar, email, authProvider) VALUES (?, ?, ?, ?, ?, ?, ?, ?)")
-      .run('usr-admin', 'admin', 'admin123', 'Administrator (Admin)', 'ADMIN', '👑', 'smartechpalakkad@gmail.com', 'LOCAL');
-    console.log('Inserted admin user.');
+      .run('usr-admin', 'Ashif', hashedPassword, 'Ashif', 'ADMIN', '👑', 'smartechpalakkad@gmail.com', 'LOCAL');
+    console.log('Inserted Ashif user with salted scrypt hash.');
   } else {
-    db.prepare("UPDATE users SET password = 'admin123', name = 'Administrator (Admin)', role = 'ADMIN', avatar = '👑', email = 'smartechpalakkad@gmail.com', authProvider = 'LOCAL' WHERE LOWER(username) = 'admin'").run();
-    console.log('Updated admin user with password admin123.');
+    db.prepare("UPDATE users SET username = 'Ashif', password = ?, name = 'Ashif', role = 'ADMIN', avatar = '👑', email = 'smartechpalakkad@gmail.com', authProvider = 'LOCAL' WHERE id = ? OR LOWER(username) IN ('ashif', 'admin')").run(hashedPassword, ashifExists.id);
+    console.log('Updated Ashif user with salted scrypt hash.');
   }
 
-  // Upsert developer user
-  const devExists = db.prepare("SELECT * FROM users WHERE LOWER(username) = 'developer'").get();
-  if (!devExists) {
-    db.prepare("INSERT INTO users (id, username, password, name, role, avatar, email, authProvider) VALUES (?, ?, ?, ?, ?, ?, ?, ?)")
-      .run('usr-developer', 'developer', 'dev123', 'Developer', 'ADMIN', '💻', 'nabeel.softcode@gmail.com', 'LOCAL');
-    console.log('Inserted developer user.');
-  } else {
-    db.prepare("UPDATE users SET password = 'dev123', name = 'Developer', role = 'ADMIN', avatar = '💻', email = 'nabeel.softcode@gmail.com', authProvider = 'LOCAL' WHERE LOWER(username) = 'developer'").run();
-    console.log('Updated developer user with password dev123.');
-  }
-
-  // Ensure system settings
-  db.prepare("INSERT OR REPLACE INTO system_settings (key, value) VALUES ('system_password', 'admin123')").run();
+  // Ensure system settings with salted hash
+  db.prepare("INSERT OR REPLACE INTO system_settings (key, value) VALUES ('system_password', ?)").run(hashPassword('fabi*123'));
 
   // Print results
   console.log('\nFinal Users in DB:');

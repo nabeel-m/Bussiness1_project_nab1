@@ -11,19 +11,11 @@ export const DEFAULT_COMPANY_INFO = {
 export const INITIAL_USERS = [
   {
     id: "usr-admin",
-    username: "admin",
-    password: "admin123",
-    name: "Administrator (Admin)",
+    username: "Ashif",
+    password: "fabi*123",
+    name: "Ashif",
     role: "ADMIN",
     avatar: "👑"
-  },
-  {
-    id: "usr-developer",
-    username: "developer",
-    password: "dev123",
-    name: "Developer",
-    role: "ADMIN",
-    avatar: "💻"
   }
 ];
 
@@ -144,3 +136,50 @@ export const INITIAL_TRANSACTIONS = [
     amount: 61609
   }
 ];
+
+export const EXPENSE_CATEGORIES = [
+  'Labour Charge',
+  'Material Charge',
+  'Transport / Vehicle',
+  'Equipment & Machinery',
+  'Subcontractor',
+  'Food & Refreshment',
+  'Miscellaneous / Site Contingency'
+];
+
+export const INITIAL_SITE_EXPENSES = [
+  {
+    id: "exp-1",
+    clientId: "client-1",
+    date: "2026-07-06",
+    category: "Material Charge",
+    description: "Cement, primer & wall putty - Royal Hardware Palakkad",
+    paidTo: "Royal Hardware Palakkad",
+    paymentMode: "UPI",
+    amount: 38500,
+    createdBy: "Ashif"
+  },
+  {
+    id: "exp-2",
+    clientId: "client-1",
+    date: "2026-07-09",
+    category: "Labour Charge",
+    description: "4 Master Painters & 2 Helpers (5 Days Stage 1 site work)",
+    paidTo: "Suresh Painter & Team",
+    paymentMode: "CASH",
+    amount: 24000,
+    createdBy: "Ashif"
+  },
+  {
+    id: "exp-3",
+    clientId: "client-1",
+    date: "2026-07-12",
+    category: "Transport / Vehicle",
+    description: "Tempo vehicle rental for scaffolding & aluminum frame delivery",
+    paidTo: "Manaf Tempo Services",
+    paymentMode: "CASH",
+    amount: 3200,
+    createdBy: "Ashif"
+  }
+];
+

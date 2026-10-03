@@ -10,7 +10,11 @@ import {
   X, 
   ZoomIn, 
   ZoomOut, 
-  FileCheck 
+  FileCheck,
+  Calendar,
+  Hash,
+  SlidersHorizontal,
+  Sparkles 
 } from 'lucide-react';
 import Logo from './Logo';
 import officialLogoImg from '../assets/logo_new.png';
@@ -27,8 +31,9 @@ export default function QuotationPrintView({
   companyInfo = {}, 
   clients = [], 
   transactions = [], 
-  customLogoUrl = null,
+  customLogoUrl = null, 
   theme = 'night',
+  authUser = null,
   onUploadLogo,
   onRemoveCustomLogo,
   onBackToLedger,
@@ -88,6 +93,38 @@ export default function QuotationPrintView({
   const [placeOfSupply, setPlaceOfSupply] = useState('Kerala');
   const [countryOfSupply, setCountryOfSupply] = useState('India');
   const [masterViewMode, setMasterViewMode] = useState('summary'); // 'summary' | 'detailed'
+
+  // Admin Print Header Display Mode: 'both' | 'quot_only' (Quotation No instead of Date) | 'date_only'
+  const [printHeaderMode, setPrintHeaderMode] = useState(() => {
+    try {
+      return localStorage.getItem('smarttech_quot_print_header_mode') || 'both';
+    } catch (e) {
+      return 'both';
+    }
+  });
+
+  const handleSetHeaderMode = (mode) => {
+    setPrintHeaderMode(mode);
+    try {
+      localStorage.setItem('smarttech_quot_print_header_mode', mode);
+    } catch (e) {}
+  };
+
+  // Table Row Column Mode: 'number' (1, 2, 3...) | 'date' (DD-MM-YYYY) | 'both' (Sl No & Date)
+  const [itemNumberingMode, setItemNumberingMode] = useState(() => {
+    try {
+      return localStorage.getItem('smarttech_quot_item_numbering_mode') || 'number';
+    } catch (e) {
+      return 'number';
+    }
+  });
+
+  const handleSetItemNumberingMode = (mode) => {
+    setItemNumberingMode(mode);
+    try {
+      localStorage.setItem('smarttech_quot_item_numbering_mode', mode);
+    } catch (e) {}
+  };
 
   // Print directly — uses Electron native printer or standard browser print
   const handlePrintCommand = () => {
@@ -309,6 +346,155 @@ export default function QuotationPrintView({
         </div>
       </div>
 
+      {/* ── Admin Suggestion & Print Display Customizer Bar ── */}
+      <div className={`${isDay ? 'bg-amber-50/80 border-amber-200 shadow-sm' : 'bg-slate-900/90 border-slate-800'} border p-3 rounded-2xl space-y-2.5 text-xs no-print transition-colors`}>
+        {/* Row 1: Header Mode & Quick Inputs */}
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex flex-wrap items-center gap-2.5">
+            <div className="flex items-center gap-1.5 text-amber-500 font-bold">
+              <SlidersHorizontal className="w-4 h-4" />
+              <span className={isDay ? 'text-slate-900' : 'text-white'}>Header Display:</span>
+            </div>
+
+            {/* Mode Switcher: Both | Quotation No Only | Date Only */}
+            <div className={`flex items-center p-0.5 rounded-xl border ${
+              isDay ? 'bg-white border-slate-200 shadow-inner' : 'bg-slate-950 border-slate-800'
+            }`}>
+              <button
+                type="button"
+                onClick={() => handleSetHeaderMode('both')}
+                className={`px-3 py-1 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all ${
+                  printHeaderMode === 'both'
+                    ? 'bg-amber-500 text-slate-950 shadow-sm'
+                    : isDay ? 'text-slate-600 hover:text-slate-900' : 'text-slate-400 hover:text-white'
+                }`}
+                title="Prints Quotation Number on Left and Date on Right"
+              >
+                <span>Both (No & Date)</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => handleSetHeaderMode('quot_only')}
+                className={`px-3 py-1 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all ${
+                  printHeaderMode === 'quot_only'
+                    ? 'bg-amber-500 text-slate-950 shadow-sm font-extrabold'
+                    : isDay ? 'text-slate-600 hover:text-slate-900' : 'text-slate-400 hover:text-white'
+                }`}
+                title="Prints Quotation Number instead of Date"
+              >
+                <Hash className="w-3.5 h-3.5" />
+                <span>Quotation No Only</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => handleSetHeaderMode('date_only')}
+                className={`px-3 py-1 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all ${
+                  printHeaderMode === 'date_only'
+                    ? 'bg-amber-500 text-slate-950 shadow-sm font-extrabold'
+                    : isDay ? 'text-slate-600 hover:text-slate-900' : 'text-slate-400 hover:text-white'
+                }`}
+                title="Prints Date only without Quotation Number on date line"
+              >
+                <Calendar className="w-3.5 h-3.5" />
+                <span>Date Only</span>
+              </button>
+            </div>
+          </div>
+
+          {/* Quick Edit for Quotation / Ref No and Date */}
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="flex items-center gap-1.5">
+              <span className={`text-[11px] font-semibold ${isDay ? 'text-slate-600' : 'text-slate-400'}`}>
+                Quot No:
+              </span>
+              <input
+                type="text"
+                value={refNo}
+                onChange={(e) => setRefNo(e.target.value)}
+                placeholder="e.g. SMRT/2026/001"
+                className={`px-2.5 py-1 rounded-lg font-mono text-xs font-bold border focus:outline-none focus:border-amber-500 transition-colors ${
+                  isDay ? 'bg-white border-slate-300 text-slate-900' : 'bg-slate-950 border-slate-700 text-amber-300'
+                }`}
+                style={{ width: '145px' }}
+              />
+            </div>
+
+            <div className="flex items-center gap-1.5">
+              <span className={`text-[11px] font-semibold ${isDay ? 'text-slate-600' : 'text-slate-400'}`}>
+                Date:
+              </span>
+              <input
+                type="date"
+                value={quotDate}
+                onChange={(e) => setQuotDate(e.target.value)}
+                className={`px-2 py-1 rounded-lg text-xs font-semibold border focus:outline-none focus:border-amber-500 transition-colors ${
+                  isDay ? 'bg-white border-slate-300 text-slate-900' : 'bg-slate-950 border-slate-700 text-slate-200'
+                }`}
+              />
+            </div>
+          </div>
+        </div>
+
+        {/* Row 2: Table Column Selection: 1, 2, 3 (Serial No) vs Date vs Both */}
+        <div className={`pt-2 border-t flex flex-wrap items-center justify-between gap-3 ${
+          isDay ? 'border-amber-200/80' : 'border-slate-800'
+        }`}>
+          <div className="flex flex-wrap items-center gap-2.5">
+            <div className="flex items-center gap-1.5 text-amber-500 font-bold">
+              <Layers className="w-4 h-4" />
+              <span className={isDay ? 'text-slate-900' : 'text-white'}>Table Particulars Column:</span>
+            </div>
+
+            <div className={`flex items-center p-0.5 rounded-xl border ${
+              isDay ? 'bg-white border-slate-200 shadow-inner' : 'bg-slate-950 border-slate-800'
+            }`}>
+              <button
+                type="button"
+                onClick={() => handleSetItemNumberingMode('number')}
+                className={`px-3 py-1 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all ${
+                  itemNumberingMode === 'number'
+                    ? 'bg-amber-500 text-slate-950 shadow-sm font-extrabold'
+                    : isDay ? 'text-slate-600 hover:text-slate-900' : 'text-slate-400 hover:text-white'
+                }`}
+                title="Shows item serial numbers 1, 2, 3 for each description"
+              >
+                <span>🔢 1, 2, 3 (Sl No)</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => handleSetItemNumberingMode('date')}
+                className={`px-3 py-1 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all ${
+                  itemNumberingMode === 'date'
+                    ? 'bg-amber-500 text-slate-950 shadow-sm font-extrabold'
+                    : isDay ? 'text-slate-600 hover:text-slate-900' : 'text-slate-400 hover:text-white'
+                }`}
+                title="Shows transaction Date for each description"
+              >
+                <span>📅 Date (DD-MM-YYYY)</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => handleSetItemNumberingMode('both')}
+                className={`px-3 py-1 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all ${
+                  itemNumberingMode === 'both'
+                    ? 'bg-amber-500 text-slate-950 shadow-sm font-extrabold'
+                    : isDay ? 'text-slate-600 hover:text-slate-900' : 'text-slate-400 hover:text-white'
+                }`}
+                title="Shows both Sl No (1, 2, 3) and Date columns"
+              >
+                <span>✨ Both (Sl No & Date)</span>
+              </button>
+            </div>
+          </div>
+
+          <span className={`text-[11px] font-medium ${isDay ? 'text-slate-600' : 'text-slate-400'}`}>
+            {itemNumberingMode === 'number' && '✓ Each particular item displays number 1, 2, 3... in place of date'}
+            {itemNumberingMode === 'date' && '✓ Standard date column (e.g. 01-07-2026) for each transaction'}
+            {itemNumberingMode === 'both' && '✓ Dual columns: Sl No (1, 2, 3) + Date side-by-side'}
+          </span>
+        </div>
+      </div>
+
       {/* 
         On-Screen Quotation Sheet Container - Luxury Architectural Dual-Border Margin Frame with Watermark
       */}
@@ -421,11 +607,28 @@ export default function QuotationPrintView({
 
           </div>
 
-          {/* ── Date (left) + "Quotation" title (center) row ── */}
+          {/* ── Date / Quotation No + "Quotation" title (center) row ── */}
           <div className="flex items-center justify-between mb-2 px-1">
-            <div className="text-xs font-bold text-slate-800">
-              Date : <span className="font-extrabold text-slate-900">{formatDateIndian(quotDate)}</span>
+            {/* Left Header Element */}
+            <div className="text-xs font-bold text-slate-800 min-w-[130px]">
+              {printHeaderMode === 'both' && (
+                <div>
+                  Quot No : <span className="font-extrabold text-slate-900 font-mono">{refNo}</span>
+                </div>
+              )}
+              {printHeaderMode === 'quot_only' && (
+                <div>
+                  Quot No : <span className="font-extrabold text-slate-900 font-mono">{refNo}</span>
+                </div>
+              )}
+              {printHeaderMode === 'date_only' && (
+                <div>
+                  Date : <span className="font-extrabold text-slate-900">{formatDateIndian(quotDate)}</span>
+                </div>
+              )}
             </div>
+
+            {/* Center Header: Quotation Title */}
             <div className="flex-1 text-center">
               <h2 className="text-lg font-extrabold tracking-tight" style={{ color: '#ea580c' }}>
                 {isAllSitesMode ? 'Master Quotation' : 'Quotation'}
@@ -436,8 +639,17 @@ export default function QuotationPrintView({
                 </span>
               )}
             </div>
-            <div className="w-24 text-right text-[10px] font-bold text-slate-500">
-              {isAllSitesMode ? `${allSitesData.totalSites} Sites` : ''}
+
+            {/* Right Header Element */}
+            <div className="w-32 text-right text-xs font-bold text-slate-800">
+              {printHeaderMode === 'both' && (
+                <div>
+                  Date : <span className="font-extrabold text-slate-900">{formatDateIndian(quotDate)}</span>
+                </div>
+              )}
+              {printHeaderMode !== 'both' && isAllSitesMode && (
+                <span className="text-[10px] text-slate-500">{allSitesData.totalSites} Sites</span>
+              )}
             </div>
           </div>
 
@@ -468,9 +680,25 @@ export default function QuotationPrintView({
             <table className="w-full text-left text-xs border-collapse">
               <thead>
                 <tr style={{ backgroundColor: '#ea580c', color: '#ffffff' }}>
-                  <th className="py-1.5 px-2 font-bold text-xs text-white text-center whitespace-nowrap w-24" style={{ backgroundColor: '#ea580c', color: '#ffffff' }}>
-                    {isAllSitesMode ? 'Sl No' : 'Date'}
-                  </th>
+                  {/* First Column: Sl No or Date or Both based on itemNumberingMode */}
+                  {isAllSitesMode ? (
+                    <th className="py-1.5 px-2 font-bold text-xs text-white text-center whitespace-nowrap w-16" style={{ backgroundColor: '#ea580c', color: '#ffffff' }}>
+                      Sl No
+                    </th>
+                  ) : (
+                    <>
+                      {(itemNumberingMode === 'number' || itemNumberingMode === 'both') && (
+                        <th className="py-1.5 px-2 font-bold text-xs text-white text-center whitespace-nowrap w-14" style={{ backgroundColor: '#ea580c', color: '#ffffff' }}>
+                          Sl No
+                        </th>
+                      )}
+                      {(itemNumberingMode === 'date' || itemNumberingMode === 'both') && (
+                        <th className="py-1.5 px-2 font-bold text-xs text-white text-center whitespace-nowrap w-24" style={{ backgroundColor: '#ea580c', color: '#ffffff' }}>
+                          Date
+                        </th>
+                      )}
+                    </>
+                  )}
                   <th className="py-1.5 px-2.5 font-bold text-xs text-white" style={{ backgroundColor: '#ea580c', color: '#ffffff' }}>
                     {isAllSitesMode ? 'Site Project / Client Details' : 'Particulars / Description'}
                   </th>
@@ -583,9 +811,16 @@ export default function QuotationPrintView({
                     {/* Opening Balance Row */}
                     {selectedClient && selectedClient.openingBalance > 0 && (
                       <tr style={{ backgroundColor: '#fff7ed' }}>
-                        <td className="py-1.5 px-2 font-mono text-slate-800 text-center text-[11px] whitespace-nowrap">
-                          {formatDateIndian(selectedClient.createdAt || quotDate)}
-                        </td>
+                        {(itemNumberingMode === 'number' || itemNumberingMode === 'both') && (
+                          <td className="py-1.5 px-2 font-mono text-slate-900 text-center text-xs font-bold whitespace-nowrap">
+                            1
+                          </td>
+                        )}
+                        {(itemNumberingMode === 'date' || itemNumberingMode === 'both') && (
+                          <td className="py-1.5 px-2 font-mono text-slate-800 text-center text-[11px] whitespace-nowrap">
+                            {formatDateIndian(selectedClient.createdAt || quotDate)}
+                          </td>
+                        )}
                         <td className="py-1.5 px-2.5 text-slate-900 font-semibold text-xs">Opening Balance Brought Forward</td>
                         <td className="py-1.5 px-2 text-center font-bold text-orange-600 text-[11px] whitespace-nowrap">OPENING</td>
                         <td className="py-1.5 px-2.5 text-right font-mono text-slate-600 text-xs whitespace-nowrap">-</td>
@@ -599,14 +834,23 @@ export default function QuotationPrintView({
                     {/* Transaction Rows */}
                     {processedTxs.map((tx, idx) => {
                       const isDebit = tx.type === 'BILL' || tx.type === 'DEBIT';
+                      const hasOpening = selectedClient && selectedClient.openingBalance > 0;
+                      const rowSlNo = hasOpening ? idx + 2 : idx + 1;
                       return (
                         <tr 
                           key={tx.id || idx}
                           style={{ backgroundColor: idx % 2 === 1 ? '#fff7ed' : '#ffffff' }}
                         >
-                          <td className="py-1.5 px-2 font-mono text-slate-800 text-center text-[11px] whitespace-nowrap">
-                            {formatDateIndian(tx.date)}
-                          </td>
+                          {(itemNumberingMode === 'number' || itemNumberingMode === 'both') && (
+                            <td className="py-1.5 px-2 font-mono text-slate-900 text-center text-xs font-bold whitespace-nowrap">
+                              {rowSlNo}
+                            </td>
+                          )}
+                          {(itemNumberingMode === 'date' || itemNumberingMode === 'both') && (
+                            <td className="py-1.5 px-2 font-mono text-slate-800 text-center text-[11px] whitespace-nowrap">
+                              {formatDateIndian(tx.date)}
+                            </td>
+                          )}
                           <td className="py-1.5 px-2.5 text-slate-900 font-semibold text-xs leading-snug">
                             {tx.description}
                           </td>
@@ -627,9 +871,14 @@ export default function QuotationPrintView({
                     })}
 
                     {/* Fallback demo row if empty */}
-                    {processedTxs.length === 0 && !selectedClient.openingBalance && (
+                    {processedTxs.length === 0 && (!selectedClient || !selectedClient.openingBalance) && (
                       <tr className="bg-white">
-                        <td className="py-1.5 px-2 font-mono text-slate-800 text-center text-[11px] whitespace-nowrap">{formatDateIndian(quotDate)}</td>
+                        {(itemNumberingMode === 'number' || itemNumberingMode === 'both') && (
+                          <td className="py-1.5 px-2 font-mono text-slate-900 text-center text-xs font-bold whitespace-nowrap">1</td>
+                        )}
+                        {(itemNumberingMode === 'date' || itemNumberingMode === 'both') && (
+                          <td className="py-1.5 px-2 font-mono text-slate-800 text-center text-[11px] whitespace-nowrap">{formatDateIndian(quotDate)}</td>
+                        )}
                         <td className="py-1.5 px-2.5 text-slate-900 font-semibold text-xs">Basic Interior & Exterior Design Work</td>
                         <td className="py-1.5 px-2 text-center font-bold text-orange-600 text-[11px] whitespace-nowrap">BILL</td>
                         <td className="py-1.5 px-2.5 text-right font-mono text-slate-900 text-xs whitespace-nowrap">₹ 95,950.00</td>
@@ -640,7 +889,7 @@ export default function QuotationPrintView({
 
                     {/* Current Balance Due row */}
                     <tr style={{ backgroundColor: '#fff7ed' }}>
-                      <td colSpan={5} className="py-2 px-3 text-right font-bold text-xs text-slate-900 uppercase tracking-wide">
+                      <td colSpan={itemNumberingMode === 'both' ? 6 : 5} className="py-2 px-3 text-right font-bold text-xs text-slate-900 uppercase tracking-wide">
                         CURRENT BALANCE DUE:
                       </td>
                       <td className="py-2 px-3 text-right font-mono font-black text-slate-950 text-sm whitespace-nowrap">
@@ -862,8 +1111,12 @@ export default function QuotationPrintView({
                       <div className="inline-block bg-amber-50 border border-amber-300/80 px-3 py-1 rounded text-amber-900 font-extrabold text-xs mb-1">
                         {isAllSitesMode ? 'MASTER PORTFOLIO QUOTATION' : 'OFFICIAL QUOTATION'}
                       </div>
-                      <div><span className="text-slate-500">Ref No:</span> <strong className="font-mono text-slate-900">{refNo}</strong></div>
-                      <div><span className="text-slate-500">Date:</span> <strong className="text-slate-900">{formatDateIndian(quotDate)}</strong></div>
+                      {printHeaderMode !== 'date_only' && (
+                        <div><span className="text-slate-500">Quot No:</span> <strong className="font-mono text-slate-900">{refNo}</strong></div>
+                      )}
+                      {printHeaderMode !== 'quot_only' && (
+                        <div><span className="text-slate-500">Date:</span> <strong className="text-slate-900">{formatDateIndian(quotDate)}</strong></div>
+                      )}
                       <div><span className="text-slate-500">Place of Supply:</span> <strong className="text-slate-900">{placeOfSupply}</strong></div>
                     </div>
                   </div>
@@ -873,7 +1126,12 @@ export default function QuotationPrintView({
                     <table className="w-full text-xs border border-amber-600/30">
                       <thead className="bg-amber-100/70 text-slate-900 border-b border-amber-600/30">
                         <tr>
-                          <th className="py-2 px-3 text-left font-extrabold">#</th>
+                          {(itemNumberingMode === 'number' || itemNumberingMode === 'both') && (
+                            <th className="py-2 px-3 text-left font-extrabold w-14">#</th>
+                          )}
+                          {(itemNumberingMode === 'date' || itemNumberingMode === 'both') && (
+                            <th className="py-2 px-3 text-left font-extrabold w-24">Date</th>
+                          )}
                           <th className="py-2 px-3 text-left font-extrabold">Description / Work Item</th>
                           <th className="py-2 px-3 text-right font-extrabold">Amount</th>
                         </tr>
@@ -882,23 +1140,42 @@ export default function QuotationPrintView({
                         {isAllSitesMode ? (
                           allSitesData.siteSummaries.map((s, idx) => (
                             <tr key={s.id} className={idx % 2 === 0 ? 'bg-white' : 'bg-amber-50/20'}>
-                              <td className="py-2 px-3 text-slate-500">{idx + 1}</td>
+                              {(itemNumberingMode === 'number' || itemNumberingMode === 'both') && (
+                                <td className="py-2 px-3 text-slate-700 font-bold">{idx + 1}</td>
+                              )}
+                              {(itemNumberingMode === 'date' || itemNumberingMode === 'both') && (
+                                <td className="py-2 px-3 text-slate-600 font-mono text-[11px]">{formatDateIndian(quotDate)}</td>
+                              )}
                               <td className="py-2 px-3 font-medium text-slate-900">{s.name} ({s.siteLocation})</td>
                               <td className="py-2 px-3 text-right font-mono font-bold text-slate-900">{formatIndianCurrency(s.closingBalance)}</td>
                             </tr>
                           ))
                         ) : (
                           processedTxs.length > 0 ? (
-                            processedTxs.map((t, idx) => (
-                              <tr key={t.id} className={idx % 2 === 0 ? 'bg-white' : 'bg-amber-50/20'}>
-                                <td className="py-2 px-3 text-slate-500">{idx + 1}</td>
-                                <td className="py-2 px-3 text-slate-900 font-medium">{t.description || (t.type === 'BILL' ? 'Project Service / Material Billing' : 'Payment Received')}</td>
-                                <td className="py-2 px-3 text-right font-mono font-bold text-slate-900">{formatIndianCurrency(t.amount)}</td>
-                              </tr>
-                            ))
+                            processedTxs.map((t, idx) => {
+                              const hasOpening = selectedClient && selectedClient.openingBalance > 0;
+                              const rowSlNo = hasOpening ? idx + 2 : idx + 1;
+                              return (
+                                <tr key={t.id || idx} className={idx % 2 === 0 ? 'bg-white' : 'bg-amber-50/20'}>
+                                  {(itemNumberingMode === 'number' || itemNumberingMode === 'both') && (
+                                    <td className="py-2 px-3 text-slate-700 font-bold">{rowSlNo}</td>
+                                  )}
+                                  {(itemNumberingMode === 'date' || itemNumberingMode === 'both') && (
+                                    <td className="py-2 px-3 text-slate-600 font-mono text-[11px]">{formatDateIndian(t.date)}</td>
+                                  )}
+                                  <td className="py-2 px-3 text-slate-900 font-medium">{t.description || (t.type === 'BILL' ? 'Project Service / Material Billing' : 'Payment Received')}</td>
+                                  <td className="py-2 px-3 text-right font-mono font-bold text-slate-900">{formatIndianCurrency(t.amount)}</td>
+                                </tr>
+                              );
+                            })
                           ) : (
                             <tr>
-                              <td className="py-2 px-3 text-slate-500">1</td>
+                              {(itemNumberingMode === 'number' || itemNumberingMode === 'both') && (
+                                <td className="py-2 px-3 text-slate-700 font-bold">1</td>
+                              )}
+                              {(itemNumberingMode === 'date' || itemNumberingMode === 'both') && (
+                                <td className="py-2 px-3 text-slate-600 font-mono text-[11px]">{formatDateIndian(quotDate)}</td>
+                              )}
                               <td className="py-2 px-3 text-slate-900 font-medium">Opening Balance & Account Settlement</td>
                               <td className="py-2 px-3 text-right font-mono font-bold text-slate-900">{formatIndianCurrency(netBalance)}</td>
                             </tr>
@@ -907,7 +1184,7 @@ export default function QuotationPrintView({
                       </tbody>
                       <tfoot className="bg-amber-100/50 border-t-2 border-amber-600/40 font-extrabold">
                         <tr>
-                          <td colSpan="2" className="py-2.5 px-3 text-right uppercase text-slate-900">Total Net Balance Payable:</td>
+                          <td colSpan={itemNumberingMode === 'both' ? 3 : 2} className="py-2.5 px-3 text-right uppercase text-slate-900">Total Net Balance Payable:</td>
                           <td className="py-2.5 px-3 text-right font-mono text-sm text-amber-900">{formatIndianCurrency(netBalance)}</td>
                         </tr>
                       </tfoot>

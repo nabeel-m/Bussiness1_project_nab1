@@ -2,9 +2,21 @@ const { app, BrowserWindow, shell, ipcMain } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const http = require('http');
+const net = require('net');
 const os = require('os');
 const { exec } = require('child_process');
 const { pathToFileURL } = require('url');
+
+// 1. Single Instance Lock — prevents duplicate zombie processes & brings existing window to focus
+const gotTheLock = app.requestSingleInstanceLock();
+if (!gotTheLock) {
+  try {
+    const debugLog = path.join(os.homedir(), 'smarttech_desktop_debug.log');
+    fs.appendFileSync(debugLog, `[${new Date().toISOString()}] [PID:${process.pid}] Duplicate instance launched. Focusing existing window and exiting.\n`);
+  } catch (e) {}
+  app.quit();
+  process.exit(0);
+}
 
 /**
  * Ensures Windows 11 uses the classic reliable Print Dialog instead of the
@@ -51,7 +63,7 @@ app.on('quit', (e, code) => {
 });
 
 let mainWindow = null;
-const BACKEND_PORT = 5000;
+let backendPort = 5000;
 const DEV_PORT = 3000;
 
 function getServerPath() {
@@ -114,11 +126,35 @@ function resolveDatabasePath() {
 }
 
 /**
- * Checks if a local HTTP port is responding
+ * Checks if a port is currently free/unbound
  */
-function checkPortResponding(port) {
+function isPortAvailable(port) {
   return new Promise((resolve) => {
-    const req = http.get(`http://127.0.0.1:${port}/api/auth/members`, { timeout: 600 }, (res) => {
+    const tester = net.createServer()
+      .once('error', () => resolve(false))
+      .once('listening', () => {
+        tester.once('close', () => resolve(true)).close();
+      })
+      .listen(port, '127.0.0.1');
+  });
+}
+
+/**
+ * Finds an available port starting from startPort
+ */
+async function findAvailablePort(startPort) {
+  for (let p = startPort; p < startPort + 30; p++) {
+    if (await isPortAvailable(p)) return p;
+  }
+  return startPort;
+}
+
+/**
+ * Checks if a local HTTP port is responding to our API
+ */
+function checkPortResponding(port, timeoutMs = 250) {
+  return new Promise((resolve) => {
+    const req = http.get(`http://127.0.0.1:${port}/api/auth/members`, { timeout: timeoutMs }, (res) => {
       resolve(true);
     });
     req.on('error', () => resolve(false));
@@ -133,11 +169,19 @@ function checkPortResponding(port) {
  * Starts Express backend directly in the Electron process if not already running
  */
 async function ensureBackendServer() {
-  logDebug(`ensureBackendServer() called. Checking port ${BACKEND_PORT}...`);
-  const isRunning = await checkPortResponding(BACKEND_PORT);
+  logDebug(`ensureBackendServer() called. Checking port ${backendPort}...`);
+  const isRunning = await checkPortResponding(backendPort, 200);
   if (isRunning) {
-    logDebug(`[Electron] Backend server already running on port ${BACKEND_PORT}`);
+    logDebug(`[Electron] Backend server already running on port ${backendPort}`);
     return;
+  }
+
+  // If port 5000 is occupied by a foreign process that is not our API, pick next free port
+  const available = await isPortAvailable(backendPort);
+  if (!available) {
+    const freePort = await findAvailablePort(5001);
+    logDebug(`Port ${backendPort} is occupied by another app. Selected free port: ${freePort}`);
+    backendPort = freePort;
   }
 
   const dbPath = resolveDatabasePath();
@@ -146,29 +190,30 @@ async function ensureBackendServer() {
 
   process.env.SMARTTECH_DB_PATH = dbPath;
   process.env.CLIENT_DIST_PATH = distPath;
-  process.env.PORT = String(BACKEND_PORT);
+  process.env.PORT = String(backendPort);
   process.env.NODE_ENV = app.isPackaged ? 'production' : 'development';
 
   logDebug('[Electron] Initializing backend server in main process...');
   logDebug(`[Electron] Server path: ${serverPath}`);
   logDebug(`[Electron] Database location: ${dbPath}`);
+  logDebug(`[Electron] Bound port: ${backendPort}`);
 
   try {
     await import(pathToFileURL(serverPath).href);
-    logDebug(`[Electron] Backend server imported, listening on port ${BACKEND_PORT}`);
+    logDebug(`[Electron] Backend server imported, listening on port ${backendPort}`);
   } catch (err) {
     logDebug(`[Electron] Failed to start backend server: ${err && err.stack ? err.stack : err}`);
   }
 
-  // Poll until route responds
+  // Fast polling until route responds (checks every 40ms)
   let retries = 0;
-  while (retries < 40) {
-    const ready = await checkPortResponding(BACKEND_PORT);
+  while (retries < 60) {
+    const ready = await checkPortResponding(backendPort, 150);
     if (ready) {
-      logDebug(`[Electron] Backend server confirmed ready on port ${BACKEND_PORT}`);
+      logDebug(`[Electron] Backend server confirmed ready on port ${backendPort}`);
       break;
     }
-    await new Promise((r) => setTimeout(r, 100));
+    await new Promise((r) => setTimeout(r, 40));
     retries++;
   }
 }
@@ -215,7 +260,7 @@ async function createWindow() {
     }
   });
 
-  let targetUrl = `http://127.0.0.1:${BACKEND_PORT}`;
+  let targetUrl = `http://127.0.0.1:${backendPort}`;
   if (!app.isPackaged) {
     const isViteUp = await checkPortResponding(DEV_PORT);
     if (isViteUp) {
@@ -240,7 +285,7 @@ async function createWindow() {
     setTimeout(() => {
       if (mainWindow && !mainWindow.isDestroyed()) {
         logDebug('Retrying loadURL after failure...');
-        mainWindow.loadURL(`http://127.0.0.1:${BACKEND_PORT}`).catch((e) => {
+        mainWindow.loadURL(`http://127.0.0.1:${backendPort}`).catch((e) => {
           logDebug(`Retry loadURL failed: ${e.message}`);
         });
       }
@@ -578,6 +623,16 @@ app.whenReady().then(async () => {
     });
   }, 6 * 60 * 60 * 1000);
 
+  // Second-instance handler: when user clicks desktop icon or runs exe again, focus existing window
+  app.on('second-instance', () => {
+    logDebug('second-instance event received. Focusing existing window.');
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      if (mainWindow.isMinimized()) mainWindow.restore();
+      mainWindow.show();
+      mainWindow.focus();
+    }
+  });
+
   app.on('activate', () => {
     logDebug('app "activate" event fired');
     if (BrowserWindow.getAllWindows().length === 0) {
@@ -591,5 +646,9 @@ app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {
     logDebug('Calling app.quit() from window-all-closed');
     app.quit();
+    // Guarantee clean exit so NSIS portable wrapper or Windows handles do not hang
+    setTimeout(() => {
+      process.exit(0);
+    }, 300);
   }
 });

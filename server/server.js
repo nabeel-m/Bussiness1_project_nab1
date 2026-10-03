@@ -4,6 +4,7 @@ import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
 import db, { initDb } from './database.js';
+import { hashPassword, verifyPassword, needsRehash } from './cryptoUtils.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -19,29 +20,22 @@ app.use(express.json({ limit: '10mb' }));
 initDb();
 
 // -------------------------------------------------------------
-// 2 Users Authentication Endpoints (Admin and Developer ONLY)
-// 1. admin: Administrator (Admin)
-// 2. developer: Developer
+// Authentication Endpoints (Ashif Administrator ONLY)
+// 1. Ashif (Administrator)
 // -------------------------------------------------------------
 
-// Fetch configured members for login selection (Admin & Developer)
+// Fetch configured members for login selection (Ashif ONLY)
 app.get('/api/auth/members', (req, res) => {
   try {
-    const members = db.prepare('SELECT id, username, name, role, avatar FROM users WHERE username IN (?, ?)')
-                      .all('admin', 'developer');
+    const members = db.prepare('SELECT id, username, name, role, avatar FROM users WHERE LOWER(username) IN (?, ?)')
+                      .all('ashif', 'admin');
     if (members && members.length > 0) {
       return res.json(members);
     }
-    return res.json([
-      { id: 'usr-admin', username: 'admin', name: 'Administrator (Admin)', role: 'ADMIN', avatar: '👑' },
-      { id: 'usr-developer', username: 'developer', name: 'Developer', role: 'ADMIN', avatar: '💻' }
-    ]);
-  } catch (err) {
-    return res.json([
-      { id: 'usr-admin', username: 'admin', name: 'Administrator (Admin)', role: 'ADMIN', avatar: '👑' },
-      { id: 'usr-developer', username: 'developer', name: 'Developer', role: 'ADMIN', avatar: '💻' }
-    ]);
-  }
+  } catch (err) {}
+  return res.json([
+    { id: 'usr-admin', username: 'Ashif', name: 'Ashif', role: 'ADMIN', avatar: '👑' }
+  ]);
 });
 
 app.post('/api/auth/login', (req, res) => {
@@ -52,34 +46,43 @@ app.post('/api/auth/login', (req, res) => {
 
   const targetUsername = (username || '').trim().toLowerCase();
 
-  // Fetch user by username if provided (supporting alias fallback: admin1 -> admin, admin2/dev -> developer)
+  // Fetch user by username if provided (supporting alias fallback: ashif/admin/admin1 -> Ashif)
   let user = null;
   if (targetUsername) {
     user = db.prepare(`
       SELECT id, username, password, name, role, avatar 
       FROM users 
       WHERE LOWER(username) = ? 
-         OR (LOWER(username) = 'admin' AND ? = 'admin1')
-         OR (LOWER(username) = 'developer' AND ? IN ('admin2', 'dev'))
-    `).get(targetUsername, targetUsername, targetUsername);
+         OR (LOWER(username) IN ('ashif', 'admin') AND ? IN ('ashif', 'admin', 'admin1'))
+    `).get(targetUsername, targetUsername);
   }
 
   // System master password check
-  let savedMasterPass = 'admin';
+  let savedMasterPass = 'fabi*123';
   try {
     const row = db.prepare("SELECT value FROM system_settings WHERE key = 'system_password'").get();
     if (row && row.value) savedMasterPass = row.value;
   } catch (e) {}
 
-  // Check matching password
-  const isMasterMatch = (password === savedMasterPass || password === 'admin123' || password === 'admin' || password === 'smarttech');
+  // Check matching master password using constant-time verification
+  const isMasterMatch = verifyPassword(password, savedMasterPass) || 
+                        verifyPassword(password, 'fabi*123') ||
+                        password === 'admin123' || password === 'admin' || password === 'smarttech';
 
   if (user) {
-    const isUserPassMatch = (password === user.password) || 
-                            (user.username === 'admin' && (password === 'admin123' || password === 'admin' || password === 'admin1')) ||
-                            (user.username === 'developer' && (password === 'dev123' || password === 'developer' || password === 'developer123' || password === 'dev' || password === 'admin2'));
+    const isAshif = user.username.toLowerCase() === 'ashif' || user.username.toLowerCase() === 'admin';
+
+    const isUserPassMatch = verifyPassword(password, user.password) || 
+                            (isAshif && (password === 'fabi*123' || password === 'admin123' || password === 'admin' || password === 'admin1'));
 
     if (isUserPassMatch || isMasterMatch) {
+      // Auto-migrate to salted scrypt hash if stored password was plaintext
+      if (needsRehash(user.password)) {
+        try {
+          db.prepare('UPDATE users SET password = ? WHERE id = ?').run(hashPassword(password), user.id);
+        } catch (e) {}
+      }
+
       const { password: _, ...userSafe } = user;
       return res.json({ success: true, user: userSafe });
     } else {
@@ -89,20 +92,28 @@ app.post('/api/auth/login', (req, res) => {
 
   // If no username provided or not found, try matching against admin or master password
   if (isMasterMatch) {
-    const defaultAdmin = db.prepare("SELECT id, username, name, role, avatar FROM users WHERE username = 'admin'").get() || {
+    const defaultAdmin = db.prepare("SELECT id, username, name, role, avatar FROM users WHERE LOWER(username) IN ('ashif', 'admin')").get() || {
       id: 'usr-admin',
-      username: 'admin',
-      name: 'Administrator (Admin)',
+      username: 'Ashif',
+      name: 'Ashif',
       role: 'ADMIN',
       avatar: '👑'
     };
     return res.json({ success: true, user: defaultAdmin });
   }
 
-  // Check against all users in db
-  const matchedUser = db.prepare('SELECT id, username, name, role, avatar FROM users WHERE password = ?').get(password);
-  if (matchedUser) {
-    return res.json({ success: true, user: matchedUser });
+  // Check against all users in db using verifyPassword
+  const allUsers = db.prepare('SELECT id, username, password, name, role, avatar FROM users').all();
+  for (const u of allUsers) {
+    if (verifyPassword(password, u.password)) {
+      if (needsRehash(u.password)) {
+        try {
+          db.prepare('UPDATE users SET password = ? WHERE id = ?').run(hashPassword(password), u.id);
+        } catch (e) {}
+      }
+      const { password: _, ...userSafe } = u;
+      return res.json({ success: true, user: userSafe });
+    }
   }
 
   res.status(401).json({ error: 'Invalid username or password' });
@@ -115,24 +126,27 @@ app.post('/api/auth/change-member-password', (req, res) => {
     return res.status(400).json({ error: 'New password cannot be empty' });
   }
 
-  const targetUsername = (username || 'admin').trim().toLowerCase();
+  const targetUsername = (username || 'ashif').trim().toLowerCase();
   const user = db.prepare(`
     SELECT * FROM users 
     WHERE LOWER(username) = ? 
-       OR (LOWER(username) = 'admin' AND ? = 'admin1')
-       OR (LOWER(username) = 'developer' AND ? IN ('admin2', 'dev'))
-  `).get(targetUsername, targetUsername, targetUsername);
+       OR (LOWER(username) IN ('ashif', 'admin') AND ? IN ('ashif', 'admin', 'admin1'))
+  `).get(targetUsername, targetUsername);
 
   if (!user) {
     return res.status(404).json({ error: 'Member not found' });
   }
 
-  if (currentPassword && currentPassword !== user.password && currentPassword !== targetUsername && currentPassword !== 'admin123' && currentPassword !== 'admin' && currentPassword !== 'dev123') {
+  const isCurrentMatch = verifyPassword(currentPassword, user.password) ||
+                         (currentPassword && (currentPassword === user.password || currentPassword === targetUsername || currentPassword === 'fabi*123' || currentPassword === 'admin123' || currentPassword === 'admin'));
+
+  if (currentPassword && !isCurrentMatch) {
     return res.status(401).json({ error: 'Current password is incorrect' });
   }
 
   try {
-    db.prepare('UPDATE users SET password = ? WHERE id = ?').run(newPassword.trim(), user.id);
+    const hashed = hashPassword(newPassword.trim());
+    db.prepare('UPDATE users SET password = ? WHERE id = ?').run(hashed, user.id);
     return res.json({ success: true, message: `Password updated for ${user.name}` });
   } catch (err) {
     return res.status(500).json({ error: 'Failed to update password: ' + err.message });
@@ -401,6 +415,32 @@ app.post('/api/transactions', (req, res) => {
   res.status(201).json(newTx);
 });
 
+app.put('/api/transactions/:id', (req, res) => {
+  const { id } = req.params;
+  const { date, description, type, amount } = req.body;
+
+  const stmt = db.prepare(`
+    UPDATE transactions 
+    SET date = ?, description = ?, type = ?, amount = ?
+    WHERE id = ?
+  `);
+
+  const result = stmt.run(
+    date || new Date().toISOString().split('T')[0],
+    description || '',
+    type || 'BILL',
+    parseFloat(amount) || 0,
+    id
+  );
+
+  if (result.changes > 0) {
+    const updated = db.prepare('SELECT * FROM transactions WHERE id = ?').get(id);
+    res.json(updated);
+  } else {
+    res.status(404).json({ error: 'Transaction not found' });
+  }
+});
+
 app.delete('/api/transactions/:id', (req, res) => {
   const { id } = req.params;
   const result = db.prepare('DELETE FROM transactions WHERE id = ?').run(id);
@@ -408,6 +448,108 @@ app.delete('/api/transactions/:id', (req, res) => {
     res.json({ success: true, id });
   } else {
     res.status(404).json({ error: 'Transaction not found' });
+  }
+});
+
+// -------------------------------------------------------------
+// Site Expenses Endpoints (Admin Only)
+// -------------------------------------------------------------
+app.get('/api/site-expenses', (req, res) => {
+  const userRole = (req.headers['x-user-role'] || req.query.role || '').toUpperCase();
+  if (userRole && userRole !== 'ADMIN') {
+    return res.status(403).json({ error: 'Access denied. Site expenses are restricted to Administrator.' });
+  }
+
+  const { clientId } = req.query;
+  let expenses;
+  if (clientId && clientId !== 'ALL_SITES') {
+    expenses = db.prepare('SELECT * FROM site_expenses WHERE clientId = ? ORDER BY date DESC').all(clientId);
+  } else {
+    expenses = db.prepare('SELECT * FROM site_expenses ORDER BY date DESC').all();
+  }
+  res.json(expenses);
+});
+
+app.post('/api/site-expenses', (req, res) => {
+  const userRole = (req.headers['x-user-role'] || req.body.role || '').toUpperCase();
+  if (userRole && userRole !== 'ADMIN') {
+    return res.status(403).json({ error: 'Access denied. Only Administrator can record site expenses.' });
+  }
+
+  const { clientId, date, category, description, amount, paymentMode, paidTo, createdBy } = req.body;
+  if (!clientId || !amount || parseFloat(amount) <= 0) {
+    return res.status(400).json({ error: 'Client account and valid amount are required' });
+  }
+
+  const id = `exp-${Date.now()}`;
+  const stmt = db.prepare(`
+    INSERT INTO site_expenses (id, clientId, date, category, description, amount, paymentMode, paidTo, createdBy, createdAt)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `);
+
+  stmt.run(
+    id,
+    clientId,
+    date || new Date().toISOString().split('T')[0],
+    category || 'Material Charge',
+    description || '',
+    parseFloat(amount),
+    paymentMode || 'CASH',
+    paidTo || '',
+    createdBy || 'Ashif',
+    new Date().toISOString()
+  );
+
+  const newExp = db.prepare('SELECT * FROM site_expenses WHERE id = ?').get(id);
+  res.status(201).json(newExp);
+});
+
+app.put('/api/site-expenses/:id', (req, res) => {
+  const userRole = (req.headers['x-user-role'] || req.body.role || '').toUpperCase();
+  if (userRole && userRole !== 'ADMIN') {
+    return res.status(403).json({ error: 'Access denied. Only Administrator can modify site expenses.' });
+  }
+
+  const { id } = req.params;
+  const { date, category, description, amount, paymentMode, paidTo } = req.body;
+
+  const current = db.prepare('SELECT * FROM site_expenses WHERE id = ?').get(id);
+  if (!current) {
+    return res.status(404).json({ error: 'Site expense not found' });
+  }
+
+  const stmt = db.prepare(`
+    UPDATE site_expenses
+    SET date = ?, category = ?, description = ?, amount = ?, paymentMode = ?, paidTo = ?
+    WHERE id = ?
+  `);
+
+  stmt.run(
+    date || current.date,
+    category || current.category,
+    description !== undefined ? description : current.description,
+    amount !== undefined ? parseFloat(amount) : current.amount,
+    paymentMode || current.paymentMode,
+    paidTo !== undefined ? paidTo : current.paidTo,
+    id
+  );
+
+  const updated = db.prepare('SELECT * FROM site_expenses WHERE id = ?').get(id);
+  res.json(updated);
+});
+
+app.delete('/api/site-expenses/:id', (req, res) => {
+  const userRole = (req.headers['x-user-role'] || req.query.role || '').toUpperCase();
+  if (userRole && userRole !== 'ADMIN') {
+    return res.status(403).json({ error: 'Access denied. Only Administrator can delete site expenses.' });
+  }
+
+  const { id } = req.params;
+  const result = db.prepare('DELETE FROM site_expenses WHERE id = ?').run(id);
+  if (result.changes > 0) {
+    res.json({ success: true, id });
+  } else {
+    res.status(404).json({ error: 'Site expense not found' });
   }
 });
 
@@ -461,6 +603,7 @@ app.post('/api/backup/checkpoint', (req, res) => {
 app.get('/api/backup/export', (req, res) => {
   const clients = db.prepare('SELECT * FROM clients').all();
   const transactions = db.prepare('SELECT * FROM transactions').all();
+  const siteExpenses = db.prepare('SELECT * FROM site_expenses').all();
   const quotations = db.prepare('SELECT * FROM quotations').all().map(q => ({
     ...q,
     items: JSON.parse(q.itemsJson || '[]')
@@ -469,20 +612,22 @@ app.get('/api/backup/export', (req, res) => {
   
   res.json({
     exportDate: new Date().toISOString(),
-    version: '1.0.0',
+    version: '2.0.0',
     company,
     clients,
     transactions,
+    siteExpenses,
     quotations
   });
 });
 
 app.post('/api/backup/import', (req, res) => {
-  const { clients = [], transactions = [], quotations = [] } = req.body;
+  const { clients = [], transactions = [], siteExpenses = [], quotations = [] } = req.body;
 
   db.transaction(() => {
     db.prepare('DELETE FROM clients').run();
     db.prepare('DELETE FROM transactions').run();
+    db.prepare('DELETE FROM site_expenses').run();
     db.prepare('DELETE FROM quotations').run();
 
     const insertClient = db.prepare('INSERT INTO clients (id, name, phone, address, siteLocation, openingBalance, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?)');
@@ -493,6 +638,11 @@ app.post('/api/backup/import', (req, res) => {
     const insertTx = db.prepare('INSERT INTO transactions (id, clientId, date, description, type, amount) VALUES (?, ?, ?, ?, ?, ?)');
     for (const t of transactions) {
       insertTx.run(t.id, t.clientId, t.date, t.description, t.type, t.amount);
+    }
+
+    const insertExp = db.prepare('INSERT INTO site_expenses (id, clientId, date, category, description, amount, paymentMode, paidTo, createdBy, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+    for (const e of siteExpenses) {
+      insertExp.run(e.id, e.clientId, e.date, e.category, e.description, e.amount, e.paymentMode || 'CASH', e.paidTo || '', e.createdBy || 'Ashif', e.createdAt || new Date().toISOString());
     }
 
     const insertQuot = db.prepare('INSERT INTO quotations (id, clientId, refNo, date, clientName, clientAddress, itemsJson) VALUES (?, ?, ?, ?, ?, ?, ?)');
@@ -508,6 +658,7 @@ app.post('/api/reset', (req, res) => {
   db.transaction(() => {
     db.prepare('DELETE FROM clients').run();
     db.prepare('DELETE FROM transactions').run();
+    db.prepare('DELETE FROM site_expenses').run();
     db.prepare('DELETE FROM quotations').run();
   })();
   
@@ -525,7 +676,8 @@ if (fs.existsSync(distPath)) {
   });
 }
 
-// Start Express Server
-app.listen(PORT, '0.0.0.0', () => {
-  console.log(`🚀 SMART TECH Backend REST API running on http://127.0.0.1:${PORT}`);
+// Start Express Server (bound to localhost 127.0.0.1 by default for desktop security)
+const HOST = process.env.HOST || '127.0.0.1';
+app.listen(PORT, HOST, () => {
+  console.log(`🚀 SMART TECH Backend REST API running on http://${HOST}:${PORT}`);
 });

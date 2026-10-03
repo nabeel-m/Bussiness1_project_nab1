@@ -7,7 +7,8 @@ import {
   DEFAULT_COMPANY_INFO, 
   INITIAL_CLIENTS, 
   INITIAL_QUOTATION, 
-  INITIAL_TRANSACTIONS 
+  INITIAL_TRANSACTIONS,
+  INITIAL_SITE_EXPENSES 
 } from './types/initialData';
 import { generateRefNo, generateQuotationItemsFromLedger } from './utils/formatters';
 import { apiClient } from './utils/apiClient';
@@ -56,7 +57,7 @@ export default function App() {
     try {
       const params = new URLSearchParams(window.location.search);
       if (params.get('autologin') === '1') {
-        return { id: 'usr-admin', username: 'admin', name: 'Admin', role: 'ADMIN', avatar: '👑' };
+        return { id: 'usr-admin', username: 'Ashif', name: 'Ashif', role: 'ADMIN', avatar: '👑' };
       }
       const saved = localStorage.getItem('smarttech_active_user') || sessionStorage.getItem('smarttech_active_user');
       if (saved) {
@@ -95,6 +96,17 @@ export default function App() {
       } catch (e) {}
     }
     return INITIAL_TRANSACTIONS;
+  });
+
+  const [siteExpenses, setSiteExpenses] = useState(() => {
+    const saved = localStorage.getItem('smarttech_site_expenses');
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) return parsed;
+      } catch (e) {}
+    }
+    return INITIAL_SITE_EXPENSES;
   });
 
   const [quotations, setQuotations] = useState(() => [INITIAL_QUOTATION]);
@@ -137,9 +149,17 @@ export default function App() {
         setTransactions(dbTxs);
         localStorage.setItem('smarttech_txs', JSON.stringify(dbTxs));
       }
+
+      if (currentUser?.role === 'ADMIN') {
+        const dbExpenses = await apiClient.getSiteExpenses(null, 'ADMIN');
+        if (Array.isArray(dbExpenses)) {
+          setSiteExpenses(dbExpenses);
+          localStorage.setItem('smarttech_site_expenses', JSON.stringify(dbExpenses));
+        }
+      }
     }
     loadDataFromDb();
-  }, []);
+  }, [currentUser]);
 
   const handleUploadLogo = (e) => {
     const file = e.target.files[0];
@@ -222,6 +242,53 @@ export default function App() {
     });
   };
 
+  const handleUpdateTransaction = async (txId, updatedFields) => {
+    const updated = await apiClient.updateTransaction(txId, updatedFields);
+    setTransactions(prev => {
+      const nextTxs = (Array.isArray(prev) ? prev : []).map(t => 
+        t.id === txId ? (updated || { ...t, ...updatedFields }) : t
+      );
+      localStorage.setItem('smarttech_txs', JSON.stringify(nextTxs));
+      return nextTxs;
+    });
+  };
+
+  // Site Expenses Handlers (Admin Only)
+  const handleAddSiteExpense = async (newExpense) => {
+    const created = await apiClient.addSiteExpense(newExpense, currentUser?.role || 'ADMIN');
+    const expObj = created || {
+      id: `exp-${Date.now()}`,
+      createdAt: new Date().toISOString(),
+      ...newExpense
+    };
+
+    setSiteExpenses(prev => {
+      const updated = [expObj, ...(Array.isArray(prev) ? prev : [])];
+      localStorage.setItem('smarttech_site_expenses', JSON.stringify(updated));
+      return updated;
+    });
+  };
+
+  const handleUpdateSiteExpense = async (expenseId, updatedFields) => {
+    const updated = await apiClient.updateSiteExpense(expenseId, updatedFields, currentUser?.role || 'ADMIN');
+    setSiteExpenses(prev => {
+      const nextList = (Array.isArray(prev) ? prev : []).map(e => 
+        e.id === expenseId ? (updated || { ...e, ...updatedFields }) : e
+      );
+      localStorage.setItem('smarttech_site_expenses', JSON.stringify(nextList));
+      return nextList;
+    });
+  };
+
+  const handleDeleteSiteExpense = async (expenseId) => {
+    await apiClient.deleteSiteExpense(expenseId, currentUser?.role || 'ADMIN');
+    setSiteExpenses(prev => {
+      const nextList = (Array.isArray(prev) ? prev : []).filter(e => e.id !== expenseId);
+      localStorage.setItem('smarttech_site_expenses', JSON.stringify(nextList));
+      return nextList;
+    });
+  };
+
   // Automatically generate printable quotation based on client's Tally account or All Sites Master
   const handleGenerateQuotationFromClient = (targetClient = null) => {
     if (targetClient && targetClient.id === 'ALL_SITES') {
@@ -278,11 +345,12 @@ export default function App() {
 
   // Reset to initial clean demo data in both SQLite DB & State
   const handleResetData = async () => {
-    if (window.confirm('Reset all clients, transactions and database records to clean default demo data?')) {
+    if (window.confirm('Reset all clients, transactions, site expenses and database records to clean default demo data?')) {
       await apiClient.resetDatabase();
       localStorage.clear();
       setClients(INITIAL_CLIENTS);
       setTransactions(INITIAL_TRANSACTIONS);
+      setSiteExpenses(INITIAL_SITE_EXPENSES);
       setQuotations([INITIAL_QUOTATION]);
       setCurrentQuotation(INITIAL_QUOTATION);
       setCustomLogoUrl(null);
@@ -292,7 +360,7 @@ export default function App() {
   // Export Data Backup from SQLite DB
   const handleExportData = async () => {
     const dbBackup = await apiClient.exportBackup();
-    const data = dbBackup || { clients, transactions, quotations, exportDate: new Date().toISOString() };
+    const data = dbBackup || { clients, transactions, siteExpenses, quotations, exportDate: new Date().toISOString() };
     const jsonStr = JSON.stringify(data, null, 2);
     const blob = new Blob([jsonStr], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
@@ -313,6 +381,7 @@ export default function App() {
         await apiClient.importBackup(imported);
         if (Array.isArray(imported.clients)) setClients(imported.clients);
         if (Array.isArray(imported.transactions)) setTransactions(imported.transactions);
+        if (Array.isArray(imported.siteExpenses)) setSiteExpenses(imported.siteExpenses);
         alert('Database backup imported successfully!');
       } catch (err) {
         alert('Failed to parse backup file.');
@@ -323,6 +392,7 @@ export default function App() {
 
   const safeClients = Array.isArray(clients) && clients.length > 0 ? clients : INITIAL_CLIENTS;
   const safeTxs = Array.isArray(transactions) ? transactions : INITIAL_TRANSACTIONS;
+  const safeSiteExpenses = Array.isArray(siteExpenses) ? siteExpenses : INITIAL_SITE_EXPENSES;
   const safeQuotations = Array.isArray(quotations) ? quotations : [INITIAL_QUOTATION];
 
   // If not authenticated, display the Desktop Login Page
@@ -369,6 +439,7 @@ export default function App() {
           <ClientLedger
             clients={safeClients}
             transactions={safeTxs}
+            siteExpenses={safeSiteExpenses}
             quotations={safeQuotations}
             authUser={currentUser}
             theme={theme}
@@ -377,7 +448,11 @@ export default function App() {
             onUpdateClient={handleUpdateClient}
             onDeleteClient={handleDeleteClient}
             onAddTransaction={handleAddTransaction}
+            onUpdateTransaction={handleUpdateTransaction}
             onDeleteTransaction={handleDeleteTransaction}
+            onAddSiteExpense={handleAddSiteExpense}
+            onUpdateSiteExpense={handleUpdateSiteExpense}
+            onDeleteSiteExpense={handleDeleteSiteExpense}
           />
         </div>
 
@@ -389,6 +464,7 @@ export default function App() {
             transactions={safeTxs}
             customLogoUrl={customLogoUrl}
             theme={theme}
+            authUser={currentUser}
             onUploadLogo={handleUploadLogo}
             onRemoveCustomLogo={handleRemoveCustomLogo}
             onBackToLedger={() => setActiveTab('ledger')}

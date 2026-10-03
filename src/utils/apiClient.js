@@ -3,15 +3,14 @@
 const BASE_URL = '/api';
 
 export const apiClient = {
-  // Fetch 2 Configured Login Members (Admin & Developer)
+  // Fetch Configured Login Members (Ashif Administrator)
   getMembers: async () => {
     try {
       const res = await fetch(`${BASE_URL}/auth/members`);
       if (res.ok) return await res.json();
     } catch (e) {}
     return [
-      { id: 'usr-admin', username: 'admin', name: 'Administrator (Admin)', role: 'ADMIN', avatar: '👑' },
-      { id: 'usr-developer', username: 'developer', name: 'Developer', role: 'ADMIN', avatar: '💻' }
+      { id: 'usr-admin', username: 'Ashif', name: 'Ashif', role: 'ADMIN', avatar: '👑' }
     ];
   },
 
@@ -33,22 +32,22 @@ export const apiClient = {
       // Client-side fallback check (for static deployment / offline mode)
       const u = (username || '').toLowerCase().trim();
       const defaultMembers = [
-        { id: 'usr-admin', username: 'admin', name: 'Administrator (Admin)', role: 'ADMIN', avatar: '👑' },
-        { id: 'usr-developer', username: 'developer', name: 'Developer', role: 'ADMIN', avatar: '💻' }
+        { id: 'usr-admin', username: 'Ashif', name: 'Ashif', role: 'ADMIN', avatar: '👑' }
       ];
-      const match = defaultMembers.find(m => m.username === u || (u === 'admin1' && m.username === 'admin') || ((u === 'admin2' || u === 'dev') && m.username === 'developer'));
+      const match = defaultMembers.find(m => 
+        m.username.toLowerCase() === u || 
+        (u === 'admin' && m.username.toLowerCase() === 'ashif') ||
+        (u === 'admin1' && m.username.toLowerCase() === 'ashif')
+      );
       if (match) {
-        if (match.username === 'admin' && (password === 'admin' || password === 'admin123' || password === 'admin1')) {
+        if (match.username.toLowerCase() === 'ashif' && (password === 'fabi*123' || password === 'admin' || password === 'admin123')) {
           return { success: true, user: match };
         }
-        if (match.username === 'developer' && (password === 'developer' || password === 'dev123' || password === 'developer123' || password === 'dev' || password === 'admin2')) {
-          return { success: true, user: match };
-        }
-        if (password === u || password === `${u}123`) {
+        if (password === 'fabi*123' || password === u || password === `${u}123`) {
           return { success: true, user: match };
         }
       }
-      if (password === 'admin' || password === 'admin123') {
+      if (password === 'fabi*123' || password === 'admin' || password === 'admin123') {
         return { success: true, user: defaultMembers[0] };
       }
       throw new Error(err.message || 'Invalid username or password');
@@ -216,6 +215,76 @@ export const apiClient = {
   deleteTransaction: async (id) => {
     try {
       const res = await fetch(`${BASE_URL}/transactions/${id}`, { method: 'DELETE' });
+      if (res.ok) return await res.json();
+    } catch (e) {}
+    return null;
+  },
+
+  updateTransaction: async (id, updatedFields) => {
+    try {
+      const res = await fetch(`${BASE_URL}/transactions/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updatedFields)
+      });
+      if (res.ok) return await res.json();
+    } catch (e) {}
+    return null;
+  },
+
+  // Site Expenses API (Admin Only)
+  getSiteExpenses: async (clientId = null, userRole = 'ADMIN') => {
+    try {
+      let url = `${BASE_URL}/site-expenses`;
+      const params = new URLSearchParams();
+      if (clientId) params.append('clientId', clientId);
+      if (userRole) params.append('role', userRole);
+      if (params.toString()) url += `?${params.toString()}`;
+
+      const res = await fetch(url, {
+        headers: { 'x-user-role': userRole || 'ADMIN' }
+      });
+      if (res.ok) return await res.json();
+    } catch (e) {}
+    return null;
+  },
+
+  addSiteExpense: async (expenseData, userRole = 'ADMIN') => {
+    try {
+      const res = await fetch(`${BASE_URL}/site-expenses`, {
+        method: 'POST',
+        headers: { 
+          'Content-Type': 'application/json',
+          'x-user-role': userRole || 'ADMIN'
+        },
+        body: JSON.stringify({ ...expenseData, role: userRole || 'ADMIN' })
+      });
+      if (res.ok) return await res.json();
+    } catch (e) {}
+    return null;
+  },
+
+  updateSiteExpense: async (id, updatedFields, userRole = 'ADMIN') => {
+    try {
+      const res = await fetch(`${BASE_URL}/site-expenses/${id}`, {
+        method: 'PUT',
+        headers: { 
+          'Content-Type': 'application/json',
+          'x-user-role': userRole || 'ADMIN'
+        },
+        body: JSON.stringify({ ...updatedFields, role: userRole || 'ADMIN' })
+      });
+      if (res.ok) return await res.json();
+    } catch (e) {}
+    return null;
+  },
+
+  deleteSiteExpense: async (id, userRole = 'ADMIN') => {
+    try {
+      const res = await fetch(`${BASE_URL}/site-expenses/${id}`, { 
+        method: 'DELETE',
+        headers: { 'x-user-role': userRole || 'ADMIN' }
+      });
       if (res.ok) return await res.json();
     } catch (e) {}
     return null;

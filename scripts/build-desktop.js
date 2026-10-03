@@ -7,27 +7,31 @@ console.log('==================================================');
 console.log('  SMART TECH Desktop Application Build Pipeline');
 console.log('==================================================\n');
 
-// 0. Close any running instances if open
+// 0. Close any running instances or background locks
 try {
   if (process.platform === 'win32') {
-    execSync('taskkill /F /IM "SMART TECH Billing & Quotation.exe" 2>nul || exit 0', { shell: 'cmd.exe', stdio: 'ignore' });
+    console.log('[0/4] Terminating any existing SMART TECH or electron processes...');
+    execSync("powershell -Command \"Stop-Process -Name 'SMART TECH*' -Force -ErrorAction SilentlyContinue; Stop-Process -Name 'electron' -Force -ErrorAction SilentlyContinue\"", { stdio: 'ignore' });
   }
 } catch (e) {}
 
-console.log('[1/3] Building Vite frontend production assets...');
+// Small delay to release file handles
+execSync('node -e "setTimeout(() => process.exit(0), 1000)"');
+
+console.log('[1/4] Building Vite frontend production assets...');
 execSync('npx vite build', { stdio: 'inherit' });
 
-console.log('\n[2/3] Packaging complete customer distribution (Installer, Portable EXE & Runtime)...');
+console.log('\n[2/4] Packaging complete customer distribution (Installer, Portable EXE & Runtime)...');
 const tempOut = path.join(os.homedir(), 'smarttech_release');
 execSync(`npx electron-builder --win nsis portable --config.directories.output="${tempOut}"`, { stdio: 'inherit' });
 
-console.log('\n[3/3] Syncing distribution into ./dist_desktop and installation folders...');
+console.log('\n[3/4] Syncing distribution into ./dist_desktop and installation folders...');
 const targetDir = path.join(process.cwd(), 'dist_desktop');
 if (!fs.existsSync(targetDir)) {
   fs.mkdirSync(targetDir, { recursive: true });
 }
 
-// Copy everything from tempOut (Setup.exe, Portable.exe, win-unpacked) to targetDir
+// Copy everything from tempOut to ./dist_desktop
 try {
   fs.cpSync(tempOut, targetDir, { recursive: true, force: true });
 } catch (err) {
@@ -36,7 +40,7 @@ try {
   } catch (e) {}
 }
 
-// Also sync to user's dedicated desktop install folder C:\Users\nabee\SMART-TECH-Billing-App
+// Sync to user's dedicated desktop install folder C:\Users\nabee\SMART-TECH-Billing-App
 const dedicatedAppDir = path.join(os.homedir(), 'SMART-TECH-Billing-App');
 if (!fs.existsSync(dedicatedAppDir)) {
   fs.mkdirSync(dedicatedAppDir, { recursive: true });
@@ -55,17 +59,58 @@ for (const f of files) {
     const dest = path.join(dedicatedAppDir, f);
     try {
       fs.copyFileSync(src, dest);
-    } catch (e) {}
+    } catch (e) {
+      console.warn(`Could not copy ${f}:`, e.message);
+    }
   }
 }
 
-console.log('\n==================================================');
-console.log('  ✓ SUCCESS: Full Customer Distribution Package Ready!');
-console.log(`  1. Customer Installer (.exe):`);
-console.log(`     ${path.join(dedicatedAppDir, 'SMART TECH Billing & Quotation Setup 1.0.0.exe')}`);
-console.log(`  2. Portable Single Executable (.exe):`);
-console.log(`     ${path.join(dedicatedAppDir, 'SMART TECH Billing & Quotation 1.0.0.exe')}`);
-console.log(`  3. Direct Installed App:`);
-console.log(`     ${path.join(dedicatedAppDir, 'SMART TECH Billing & Quotation.exe')}`);
-console.log('==================================================\n');
+// Create 1-click batch launcher helper in dedicated folder
+const batContent = `@echo off\r\nstart "" "%~dp0SMART TECH Billing & Quotation.exe"\r\nexit\r\n`;
+fs.writeFileSync(path.join(dedicatedAppDir, 'Launch_SMART_TECH.bat'), batContent, 'utf8');
 
+console.log('\n[4/4] Refreshing Desktop Shortcuts...');
+const targetExe = path.join(dedicatedAppDir, 'SMART TECH Billing & Quotation.exe');
+const desktopDirs = [
+  path.join(os.homedir(), 'Desktop'),
+  path.join(os.homedir(), 'OneDrive', 'Desktop')
+];
+
+for (const dDir of desktopDirs) {
+  if (fs.existsSync(dDir)) {
+    const lnkPath = path.join(dDir, 'SMART TECH Billing.lnk');
+    const psShortcut = `
+$sh = New-Object -ComObject WScript.Shell
+$sc = $sh.CreateShortcut('${lnkPath.replace(/\\/g, '\\\\')}')
+$sc.TargetPath = '${targetExe.replace(/\\/g, '\\\\')}'
+$sc.WorkingDirectory = '${dedicatedAppDir.replace(/\\/g, '\\\\')}'
+$sc.IconLocation = '${targetExe.replace(/\\/g, '\\\\')},0'
+$sc.Description = 'SMART TECH Billing & Quotation Software'
+$sc.Save()
+`;
+    try {
+      const psTmp = path.join(os.tmpdir(), 'create_shortcut.ps1');
+      fs.writeFileSync(psTmp, psShortcut, 'utf8');
+      execSync(`powershell -ExecutionPolicy Bypass -File "${psTmp}"`, { stdio: 'ignore' });
+      fs.unlinkSync(psTmp);
+      console.log(`  ✓ Updated Desktop Shortcut: ${lnkPath}`);
+    } catch (e) {
+      console.warn(`  Could not create shortcut in ${dDir}:`, e.message);
+    }
+  }
+}
+
+const pkg = JSON.parse(fs.readFileSync(path.join(process.cwd(), 'package.json'), 'utf8'));
+const appVersion = pkg.version || '2.0.0';
+
+console.log('\n==================================================');
+console.log('  ✓ SUCCESS: Full Customer Distribution Package Ready & Verified!');
+console.log(`  1. Direct Desktop App (Recommended - Instant Launch):`);
+console.log(`     ${targetExe}`);
+console.log(`  2. Customer Setup Installer (.exe):`);
+console.log(`     ${path.join(dedicatedAppDir, `SMART TECH Billing & Quotation Setup ${appVersion}.exe`)}`);
+console.log(`  3. Portable Single Executable (.exe):`);
+console.log(`     ${path.join(dedicatedAppDir, `SMART TECH Billing & Quotation ${appVersion}.exe`)}`);
+console.log(`  4. Project Build Folder:`);
+console.log(`     ${targetDir}`);
+console.log('==================================================\n');

@@ -140,6 +140,9 @@ export default function Header({
                 <span className="text-xs font-bold text-amber-500 px-1.5 py-0.5 rounded bg-amber-500/10 border border-amber-500/20">
                   TM
                 </span>
+                <span className="text-[10px] font-bold text-emerald-500 px-1.5 py-0.5 rounded bg-emerald-500/10 border border-emerald-500/20 font-mono tracking-tight">
+                  v2.0
+                </span>
               </div>
               <p className={`text-xs ${isDay ? 'text-slate-500' : 'text-slate-400'} font-sans hidden sm:block`}>
                 <span className="text-amber-500 font-medium">Interior & Exterior Solutions</span> Billing & Tally Ledger

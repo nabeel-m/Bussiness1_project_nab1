@@ -2,6 +2,7 @@ import Database from 'better-sqlite3';
 import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
+import { hashPassword, needsRehash } from './cryptoUtils.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -96,6 +97,22 @@ export function initDb() {
       key TEXT PRIMARY KEY,
       value TEXT NOT NULL
     );
+
+    CREATE TABLE IF NOT EXISTS site_expenses (
+      id TEXT PRIMARY KEY,
+      clientId TEXT NOT NULL,
+      date TEXT NOT NULL,
+      category TEXT NOT NULL,
+      description TEXT NOT NULL,
+      amount REAL NOT NULL,
+      paymentMode TEXT DEFAULT 'CASH',
+      paidTo TEXT,
+      createdBy TEXT DEFAULT 'Admin',
+      createdAt TEXT NOT NULL,
+      FOREIGN KEY (clientId) REFERENCES clients(id) ON DELETE CASCADE
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_site_expenses_clientId ON site_expenses(clientId);
   `);
 
   // Migrate users table columns if missing
@@ -114,15 +131,14 @@ export function initDb() {
     console.warn('Migration note on users table:', err.message);
   }
 
-  // Seed or update the 2 Google SSO Access Slots (Only Admin & Developer)
+  // Seed or update Google SSO Access Slot (Ashif Admin ONLY)
   const defaultSlots = [
-    { id: 'slot-admin', slotName: 'Admin: Managing Director', email: 'smartechpalakkad@gmail.com', role: 'ADMIN', defaultName: 'Managing Director (Admin)', avatar: '👑' },
-    { id: 'slot-developer', slotName: 'Developer: Software Engineer', email: 'nabeel.softcode@gmail.com', role: 'ADMIN', defaultName: 'Developer', avatar: '💻' }
+    { id: 'slot-admin', slotName: 'Admin: Managing Director', email: 'smartechpalakkad@gmail.com', role: 'ADMIN', defaultName: 'Ashif (Admin)', avatar: '👑' }
   ];
 
   // Clean up legacy SSO slots if any
   try {
-    db.prepare("DELETE FROM sso_access_slots WHERE id NOT IN ('slot-admin', 'slot-developer')").run();
+    db.prepare("DELETE FROM sso_access_slots WHERE id != 'slot-admin'").run();
   } catch (e) {}
 
   for (const s of defaultSlots) {
@@ -156,36 +172,40 @@ export function initDb() {
     `).run();
   }
 
-  // Seed default system password in system_settings if empty
-  const checkSysPass = db.prepare("SELECT value FROM system_settings WHERE key = 'system_password'").get();
-  if (!checkSysPass) {
-    db.prepare("INSERT INTO system_settings (key, value) VALUES ('system_password', 'admin123')").run();
+  // Seed or update system password in system_settings using salted hash if not already hashed
+  const currentSysPass = db.prepare("SELECT value FROM system_settings WHERE key = 'system_password'").get();
+  if (!currentSysPass || needsRehash(currentSysPass.value)) {
+    db.prepare("INSERT OR REPLACE INTO system_settings (key, value) VALUES ('system_password', ?)").run(hashPassword('fabi*123'));
   }
 
-  // Seed or sync strictly two login users: Admin and Developer ONLY
+  // Migrate legacy 'admin' username to 'Ashif'
+  try {
+    db.prepare("UPDATE users SET username = 'Ashif', name = 'Ashif' WHERE LOWER(username) = 'admin'").run();
+  } catch (e) {}
+
+  // Seed or sync strictly one login user: Ashif (Admin) ONLY
   const memberSpecs = [
-    { id: 'usr-admin', username: 'admin', name: 'Administrator (Admin)', role: 'ADMIN', avatar: '👑', defaultPass: 'admin123', email: 'smartechpalakkad@gmail.com' },
-    { id: 'usr-developer', username: 'developer', name: 'Developer', role: 'ADMIN', avatar: '💻', defaultPass: 'dev123', email: 'nabeel.softcode@gmail.com' }
+    { id: 'usr-admin', username: 'Ashif', name: 'Ashif', role: 'ADMIN', avatar: '👑', defaultPass: 'fabi*123', email: 'smartechpalakkad@gmail.com' }
   ];
 
-  // Purge any non-admin and non-developer accounts so database contains ONLY these two users
+  // Purge developer and any non-Ashif accounts
   try {
-    db.prepare("DELETE FROM users WHERE LOWER(username) NOT IN ('admin', 'developer')").run();
+    db.prepare("DELETE FROM users WHERE LOWER(username) NOT IN ('ashif', 'admin') OR id = 'usr-developer' OR LOWER(username) = 'developer'").run();
   } catch (e) {}
 
   for (const spec of memberSpecs) {
-    const existing = db.prepare('SELECT * FROM users WHERE LOWER(username) = LOWER(?)').get(spec.username);
+    const existing = db.prepare("SELECT * FROM users WHERE LOWER(username) = LOWER(?) OR (LOWER(?) = 'ashif' AND LOWER(username) = 'admin')").get(spec.username, spec.username);
     if (!existing) {
       db.prepare('INSERT INTO users (id, username, password, name, role, avatar, email) VALUES (?, ?, ?, ?, ?, ?, ?)')
-        .run(spec.id, spec.username, spec.defaultPass, spec.name, spec.role, spec.avatar, spec.email);
+        .run(spec.id, spec.username, hashPassword(spec.defaultPass), spec.name, spec.role, spec.avatar, spec.email);
     } else {
-      // Update name, role, avatar, email and reset legacy hash or empty passwords to default password
+      // If current password is not hashed, convert it to salted hash
+      const passwordToSave = needsRehash(existing.password) ? hashPassword(spec.defaultPass) : existing.password;
       db.prepare(`
         UPDATE users 
-        SET name = ?, role = ?, avatar = ?, email = ?,
-            password = CASE WHEN password IS NULL OR password = '' OR password LIKE '%:%' THEN ? ELSE password END
-        WHERE LOWER(username) = LOWER(?)
-      `).run(spec.name, spec.role, spec.avatar, spec.email, spec.defaultPass, spec.username);
+        SET username = ?, name = ?, role = ?, avatar = ?, email = ?, password = ?
+        WHERE id = ? OR LOWER(username) = LOWER(?)
+      `).run(spec.username, spec.name, spec.role, spec.avatar, spec.email, passwordToSave, existing.id, spec.username);
     }
   }
 
@@ -210,6 +230,54 @@ export function initDb() {
     insertTx.run('tx-2', 'client-1', '2026-07-12', 'Borrowed money advance credit', 'PAYMENT', 100000);
     insertTx.run('tx-3', 'client-1', '2026-07-14', '3rd & 4th bill balance amount', 'BILL', 966823);
     insertTx.run('tx-4', 'client-1', '2026-07-14', 'Advance Paid Deduction', 'PAYMENT', 61609);
+  }
+
+  // Seed default site expenses if empty
+  const checkExpenses = db.prepare('SELECT COUNT(*) as count FROM site_expenses').get();
+  if (checkExpenses.count === 0) {
+    const insertExp = db.prepare(`
+      INSERT INTO site_expenses (id, clientId, date, category, description, amount, paymentMode, paidTo, createdBy, createdAt)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+
+    insertExp.run(
+      'exp-1',
+      'client-1',
+      '2026-07-06',
+      'Material Charge',
+      'Cement, primer & wall putty - Royal Hardware Palakkad',
+      38500,
+      'UPI',
+      'Royal Hardware Palakkad',
+      'Ashif',
+      new Date().toISOString()
+    );
+
+    insertExp.run(
+      'exp-2',
+      'client-1',
+      '2026-07-09',
+      'Labour Charge',
+      '4 Master Painters & 2 Helpers (5 Days Stage 1 site work)',
+      24000,
+      'CASH',
+      'Suresh Painter & Team',
+      'Ashif',
+      new Date().toISOString()
+    );
+
+    insertExp.run(
+      'exp-3',
+      'client-1',
+      '2026-07-12',
+      'Transport / Vehicle',
+      'Tempo vehicle rental for scaffolding & aluminum frame delivery',
+      3200,
+      'CASH',
+      'Manaf Tempo Services',
+      'Ashif',
+      new Date().toISOString()
+    );
   }
 
   console.log('Database initialized successfully at:', dbPath);

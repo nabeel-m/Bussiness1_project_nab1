@@ -19,27 +19,19 @@ import smartTechLogo from '../assets/logo_new.png';
 const PRESET_ACCOUNTS = [
   {
     id: 'usr-admin',
-    username: 'admin',
-    name: 'Admin',
+    username: 'Ashif',
+    name: 'Ashif',
     role: 'ADMIN',
     avatar: '👑',
-    defaultPass: 'admin123'
-  },
-  {
-    id: 'usr-developer',
-    username: 'developer',
-    name: 'Developer',
-    role: 'ADMIN',
-    avatar: '💻',
-    defaultPass: 'dev123'
+    defaultPass: 'fabi*123'
   }
 ];
 
 export default function LoginPage({ onLoginSuccess, theme = 'night', onToggleTheme }) {
   const isDay = theme === 'day';
-  const [selectedUser, setSelectedUser] = useState('admin');
-  const [usernameInput, setUsernameInput] = useState('admin');
-  const [password, setPassword] = useState('admin123');
+  const [selectedUser, setSelectedUser] = useState('Ashif');
+  const [usernameInput, setUsernameInput] = useState('Ashif');
+  const [password, setPassword] = useState('fabi*123');
   const [showPassword, setShowPassword] = useState(false);
   const [rememberMe, setRememberMe] = useState(true);
   const [errorMsg, setErrorMsg] = useState('');
@@ -149,18 +141,18 @@ export default function LoginPage({ onLoginSuccess, theme = 'night', onToggleThe
 
           {/* Quick Profile Selection */}
           <div className="mb-6">
-            <label className={`block text-[11px] font-bold uppercase tracking-wider ${isDay ? 'text-slate-500' : 'text-slate-400'} mb-2`}>
-              Select Profile
+            <label className={`block text-[11px] font-bold uppercase tracking-wider ${isDay ? 'text-slate-500' : 'text-slate-400'} mb-2 text-center`}>
+              Profile
             </label>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="flex justify-center">
               {PRESET_ACCOUNTS.map((acc) => {
-                const isSelected = selectedUser === acc.username;
+                const isSelected = selectedUser.toLowerCase() === acc.username.toLowerCase();
                 return (
                   <button
                     key={acc.id}
                     type="button"
                     onClick={() => handleSelectPreset(acc)}
-                    className={`flex flex-col items-center p-3 rounded-2xl border transition-all text-center ${
+                    className={`flex items-center space-x-3 px-4 py-2.5 rounded-2xl border transition-all w-full max-w-[280px] ${
                       isSelected
                         ? isDay
                           ? 'bg-amber-50 border-amber-400 shadow-sm text-slate-900'
@@ -170,11 +162,13 @@ export default function LoginPage({ onLoginSuccess, theme = 'night', onToggleThe
                           : 'bg-slate-950/60 border-slate-800 text-slate-400 hover:text-slate-200 hover:border-slate-700'
                     }`}
                   >
-                    <span className="text-2xl mb-1">{acc.avatar}</span>
-                    <span className="text-xs font-bold truncate max-w-full">{acc.name}</span>
-                    <span className="text-[9px] uppercase font-mono mt-0.5 font-bold text-amber-500">
-                      {acc.role}
-                    </span>
+                    <span className="text-3xl shrink-0">{acc.avatar}</span>
+                    <div className="text-left flex-1 min-w-0">
+                      <div className={`text-sm font-bold truncate ${isDay ? 'text-slate-900' : 'text-slate-100'}`}>{acc.name}</div>
+                      <div className="text-[10px] uppercase font-mono font-bold text-amber-500">
+                        {acc.role} • Administrator
+                      </div>
+                    </div>
                   </button>
                 );
               })}
@@ -208,7 +202,7 @@ export default function LoginPage({ onLoginSuccess, theme = 'night', onToggleThe
                     setUsernameInput(e.target.value);
                     setSelectedUser(e.target.value.toLowerCase());
                   }}
-                  placeholder="e.g. admin or developer"
+                  placeholder="e.g. Ashif"
                   required
                   className={`w-full ${isDay ? 'bg-slate-50 border-slate-300 text-slate-900 placeholder-slate-400 focus:bg-white' : 'bg-slate-950 border-slate-800 text-slate-100 placeholder-slate-500'} border rounded-xl pl-10 pr-4 py-2.5 text-sm focus:outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500/30 transition-all font-mono`}
                 />
@@ -222,7 +216,7 @@ export default function LoginPage({ onLoginSuccess, theme = 'night', onToggleThe
                   Password
                 </label>
                 <span className={`text-[11px] ${isDay ? 'text-slate-500' : 'text-slate-500'}`}>
-                  Default: <span className="font-mono text-slate-400">admin123 / dev123</span>
+                  Default: <span className="font-mono text-slate-400">fabi*123</span>
                 </span>
               </div>
               <div className="relative">
@@ -261,7 +255,7 @@ export default function LoginPage({ onLoginSuccess, theme = 'night', onToggleThe
 
               <button
                 type="button"
-                onClick={() => setPassword('admin')}
+                onClick={() => setPassword('fabi*123')}
                 className="text-amber-500 hover:text-amber-600 hover:underline flex items-center space-x-1 font-semibold"
               >
                 <KeyRound className="w-3 h-3" />
